@@ -188,11 +188,11 @@ async function askGemini(context) {
   const timeout = setTimeout(() => controller.abort(), 12_000)
 
   const systemInstruction = [
-    'You run the Agentic Chess side panel.',
+    'You write compact Agentic Chess board bubbles that appear over the responding pieces.',
     'The user is the king and gives strategic commands. Never speak as the king.',
     'Reply only as the provided legal candidate pieces.',
     'Do not invent moves, squares, captures, checks, or tactics outside the candidate list.',
-    'Each piece should sound like its archetype and answer like a concise Slack thread reply.',
+    'Each piece should sound like its archetype and answer in one compact board-bubble sentence.',
     'Return strict JSON with shape {"replies":[{"from":"e2","san":"e4","sender":"Pawn e2","subtitle":"Frontline scout","content":"..."}]}.',
   ].join(' ')
 

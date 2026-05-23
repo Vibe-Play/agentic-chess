@@ -146,6 +146,11 @@ function sideBonus(command: string, move: Move) {
   return 0
 }
 
+function normalizeReplyLimit(maxReplies: number) {
+  if (!Number.isFinite(maxReplies)) return 3
+  return Math.min(3, Math.max(1, Math.round(maxReplies)))
+}
+
 function scoreMove(game: Chess, command: string, move: Move): MoveCandidate | null {
   const boardPiece = game.get(move.from)
   if (!boardPiece || boardPiece.type === 'k') return null
@@ -227,26 +232,39 @@ function scoreMove(game: Chess, command: string, move: Move): MoveCandidate | nu
 }
 
 function selectTopCandidates(game: Chess, command: string, maxReplies: number) {
-  const byPiece = new Map<string, MoveCandidate>()
+  const bestByPieceClass = new Map<PieceSymbol, MoveCandidate>()
+  const replyLimit = normalizeReplyLimit(maxReplies)
 
   for (const move of game.moves({ verbose: true })) {
     const candidate = scoreMove(game, command, move)
     if (!candidate) continue
 
-    const key = `${candidate.piece}-${move.from}`
-    const current = byPiece.get(key)
-    if (!current || candidate.relevance > current.relevance) {
-      byPiece.set(key, candidate)
+    const current = bestByPieceClass.get(candidate.piece)
+    const isBetter =
+      !current ||
+      candidate.relevance > current.relevance ||
+      (candidate.relevance === current.relevance && candidate.move.san.localeCompare(current.move.san) < 0)
+
+    if (isBetter) {
+      bestByPieceClass.set(candidate.piece, candidate)
     }
   }
 
-  return [...byPiece.values()]
+  return [...bestByPieceClass.values()]
     .sort((a, b) => b.relevance - a.relevance || a.move.san.localeCompare(b.move.san))
-    .slice(0, maxReplies)
+    .slice(0, replyLimit)
 }
 
-function pieceLabel(piece: PieceSymbol, square: Square) {
-  return `${piecePersonas[piece as Exclude<PieceSymbol, 'k'>].name} ${square}`
+const pieceClassLabels: Record<Exclude<PieceSymbol, 'k'>, string> = {
+  b: 'Bishops',
+  n: 'Knights',
+  p: 'Pawns',
+  q: 'Queen',
+  r: 'Rooks',
+}
+
+function pieceLabel(piece: PieceSymbol) {
+  return pieceClassLabels[piece as Exclude<PieceSymbol, 'k'>]
 }
 
 function buildReply(candidate: MoveCandidate): PieceReply {
@@ -261,8 +279,8 @@ function buildReply(candidate: MoveCandidate): PieceReply {
     move: candidate.move,
     piece: candidate.piece,
     relevance: candidate.relevance,
-    sender: pieceLabel(candidate.piece, candidate.move.from),
-    subtitle: `${persona.archetype} · ${pieceNames[candidate.piece]} counsel`,
+    sender: pieceLabel(candidate.piece),
+    subtitle: `${persona.archetype} · best ${pieceNames[candidate.piece]} move from ${candidate.move.from}`,
   }
 }
 

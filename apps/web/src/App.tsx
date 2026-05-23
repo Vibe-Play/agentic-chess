@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
-import { Bot, CornerDownLeft, User } from 'lucide-react'
-import { FlatChessBoard } from './components/FlatChessBoard'
+import { CornerDownLeft } from 'lucide-react'
+import { FlatChessBoard, type PieceMoveSuggestion, type PieceReplyBubble } from './components/FlatChessBoard'
 import { requestPieceCouncil } from './lib/pieceCouncilClient'
 
 type ChatMessage = {
@@ -54,6 +54,15 @@ function describeMove(move: Move) {
   return `${move.color === 'w' ? 'White' : 'Black'}: ${move.from}-${move.to}${capture} (${move.san})${suffix}`
 }
 
+function toSuggestion(move: Move): PieceMoveSuggestion {
+  return {
+    from: move.from,
+    promotion: move.promotion,
+    san: move.san,
+    to: move.to,
+  }
+}
+
 const capturedGlyphs: Record<PieceSymbol, string> = {
   p: '♟',
   n: '♞',
@@ -88,6 +97,8 @@ function App() {
   const [selectedThreadId, setSelectedThreadId] = useState('current')
   const [draft, setDraft] = useState('')
   const [isCouncilThinking, setCouncilThinking] = useState(false)
+  const [boardReplies, setBoardReplies] = useState<PieceReplyBubble[]>([])
+  const [previewMove, setPreviewMove] = useState<PieceMoveSuggestion | null>(null)
 
   const legalMoves = useMemo(() => {
     if (!selectedSquare) return []
@@ -110,12 +121,48 @@ function App() {
     return result
   }, [moveHistory])
 
-  const displayedMessages = useMemo(() => {
-    if (selectedThreadId === 'current') return messages
-    return threadHistory.find((thread) => thread.id === selectedThreadId)?.messages ?? messages
-  }, [messages, selectedThreadId, threadHistory])
-
   const isViewingArchive = selectedThreadId !== 'current'
+
+  const commitMove = useCallback(
+    (from: Square, to: Square, promotion: PieceSymbol = 'q') => {
+      const legalMove = game
+        .moves({ square: from, verbose: true })
+        .find((move) => move.to === to && (!move.promotion || move.promotion === promotion))
+
+      if (!legalMove) return false
+
+      const next = cloneGame(game)
+      const move = next.move({ from, to, promotion: legalMove.promotion ?? promotion })
+      const boardMessage: ChatMessage = {
+        id: Date.now() + Math.random(),
+        role: 'system',
+        sender: 'Board',
+        subtitle: 'move committed',
+        content: describeMove(move),
+      }
+      const archivedMessages = [...messages, boardMessage]
+      const turnTitle = currentThreadTitle(game)
+
+      setGame(next)
+      setSelectedSquare(null)
+      setLastMove({ from: move.from, to: move.to })
+      setBoardReplies([])
+      setPreviewMove(null)
+      setThreadHistory((current) => [
+        {
+          id: `${move.lan}-${Date.now()}`,
+          messages: archivedMessages,
+          subtitle: `Completed with ${move.san}`,
+          title: turnTitle,
+        },
+        ...current,
+      ])
+      setMessages([createTurnIntro(next.turn(), next.history().length)])
+      setSelectedThreadId('current')
+      return true
+    },
+    [game, messages],
+  )
 
   const handleSquareSelect = useCallback(
     (square: Square) => {
@@ -125,45 +172,37 @@ function App() {
 
       if (selectedSquare) {
         const validTarget = legalMoves.some((move) => move.to === square)
-        if (validTarget) {
-          const next = cloneGame(game)
-          const move = next.move({ from: selectedSquare, to: square, promotion: 'q' })
-          const boardMessage: ChatMessage = {
-            id: Date.now() + Math.random(),
-            role: 'system',
-            sender: 'Board',
-            subtitle: 'move committed',
-            content: describeMove(move),
-          }
-          const archivedMessages = [...messages, boardMessage]
-          const turnTitle = currentThreadTitle(game)
-
-          setGame(next)
-          setSelectedSquare(null)
-          setLastMove({ from: move.from, to: move.to })
-          setThreadHistory((current) => [
-            {
-              id: `${move.lan}-${Date.now()}`,
-              messages: archivedMessages,
-              subtitle: `Completed with ${move.san}`,
-              title: turnTitle,
-            },
-            ...current,
-          ])
-          setMessages([createTurnIntro(next.turn(), next.history().length)])
-          setSelectedThreadId('current')
+        if (validTarget && commitMove(selectedSquare, square)) {
           return
         }
       }
 
       if (piece && piece.color === game.turn()) {
+        setPreviewMove(null)
         setSelectedSquare(square)
         return
       }
 
       setSelectedSquare(null)
     },
-    [game, isCouncilThinking, legalMoves, messages, selectedSquare],
+    [commitMove, game, isCouncilThinking, legalMoves, selectedSquare],
+  )
+
+  const previewSuggestion = useCallback(
+    (suggestion: PieceMoveSuggestion) => {
+      if (isViewingArchive) return
+      setSelectedSquare(null)
+      setPreviewMove(suggestion)
+    },
+    [isViewingArchive],
+  )
+
+  const approveSuggestion = useCallback(
+    (suggestion: PieceMoveSuggestion) => {
+      if (isCouncilThinking || isViewingArchive) return
+      commitMove(suggestion.from, suggestion.to, suggestion.promotion ?? 'q')
+    },
+    [commitMove, isCouncilThinking, isViewingArchive],
   )
 
   const sendMessage = useCallback(async () => {
@@ -174,6 +213,8 @@ function App() {
     const id = Date.now()
     setDraft('')
     setSelectedThreadId('current')
+    setBoardReplies([])
+    setPreviewMove(null)
     setMessages((current) => [
       ...current,
       {
@@ -190,45 +231,65 @@ function App() {
     const result = await requestPieceCouncil(game, trimmed, 3)
     const sourceLabel = result.source === 'gemini' ? 'Gemini counsel' : 'local counsel'
 
-    setMessages((current) => {
-      if (result.terminal) {
-        return [
-          ...current,
-          {
-            id: id + 1,
-            role: 'system',
-            sender: 'Board',
-            subtitle: 'terminal position',
-            content: result.terminal,
-          },
-        ]
-      }
-
-      if (result.replies.length === 0) {
-        return [
-          ...current,
-          {
-            id: id + 1,
-            role: 'system',
-            sender: 'Piece council',
-            subtitle: sourceLabel,
-            content: 'No non-king piece has a legal response to that command from this position.',
-          },
-        ]
-      }
-
-      return [
+    if (result.terminal) {
+      const terminalMessage = result.terminal
+      setBoardReplies([])
+      setPreviewMove(null)
+      setMessages((current) => [
         ...current,
-        ...result.replies.map((reply, index) => ({
-          avatar: reply.avatar,
-          content: reply.content,
-          id: id + index + 1,
-          role: 'piece' as const,
-          sender: reply.sender,
-          subtitle: `${reply.subtitle} · ${sourceLabel}`,
-        })),
-      ]
+        {
+          id: id + 1,
+          role: 'system',
+          sender: 'Board',
+          subtitle: 'terminal position',
+          content: terminalMessage,
+        },
+      ])
+      setCouncilThinking(false)
+      return
+    }
+
+    if (result.replies.length === 0) {
+      setBoardReplies([])
+      setPreviewMove(null)
+      setMessages((current) => [
+        ...current,
+        {
+          id: id + 1,
+          role: 'system',
+          sender: 'Piece council',
+          subtitle: sourceLabel,
+          content: 'No non-king piece has a legal response to that command from this position.',
+        },
+      ])
+      setCouncilThinking(false)
+      return
+    }
+
+    const pieceMessages = result.replies.map((reply, index) => {
+      return {
+        avatar: reply.avatar,
+        content: reply.content,
+        id: id + index + 1,
+        role: 'piece' as const,
+        sender: reply.sender,
+        subtitle: `${reply.subtitle} · ${sourceLabel}`,
+      }
     })
+
+    setBoardReplies(
+      result.replies.map((reply, index) => ({
+        avatar: reply.avatar,
+        content: reply.content,
+        id: id + index + 1,
+        sender: reply.sender,
+        suggestion: toSuggestion(reply.move),
+        square: reply.from,
+        subtitle: `${reply.subtitle} · ${sourceLabel}`,
+      })),
+    )
+    setPreviewMove(toSuggestion(result.replies[0].move))
+    setMessages((current) => [...current, ...pieceMessages])
     setCouncilThinking(false)
   }, [draft, game, isCouncilThinking, isViewingArchive])
 
@@ -238,11 +299,29 @@ function App() {
         <CapturedRow side="b" pieces={captured.b} />
 
         <div className="scene-shell">
+          <div className="history-corner">
+            <select
+              aria-label="Thread history"
+              value={selectedThreadId}
+              onChange={(event) => setSelectedThreadId(event.target.value)}
+            >
+              <option value="current">{currentThreadTitle(game)} · active</option>
+              {threadHistory.map((thread) => (
+                <option key={thread.id} value={thread.id}>
+                  {thread.title} · {thread.subtitle}
+                </option>
+              ))}
+            </select>
+          </div>
           <FlatChessBoard
             game={game}
             selectedSquare={selectedSquare}
             legalTargets={legalMoves.map((move) => move.to)}
             lastMove={lastMove}
+            previewMove={selectedThreadId === 'current' ? previewMove : null}
+            replyBubbles={selectedThreadId === 'current' ? boardReplies : []}
+            onApproveSuggestion={approveSuggestion}
+            onPreviewSuggestion={previewSuggestion}
             onSquareSelect={handleSquareSelect}
           />
         </div>
@@ -258,65 +337,10 @@ function App() {
             ))
           )}
         </footer>
-      </section>
 
-      <aside className="chat-panel" aria-label="Agent chat">
-        <div className="chat-heading">
-          <div>
-            <p className="eyebrow">Thread</p>
-            <h2>Piece council</h2>
-          </div>
-          <div className="thread-actions">
-            <select
-              aria-label="Thread history"
-              value={selectedThreadId}
-              onChange={(event) => setSelectedThreadId(event.target.value)}
-            >
-              <option value="current">{currentThreadTitle(game)} · active</option>
-              {threadHistory.map((thread) => (
-                <option key={thread.id} value={thread.id}>
-                  {thread.title} · {thread.subtitle}
-                </option>
-              ))}
-            </select>
-            <Bot size={22} />
-          </div>
-        </div>
-
-        <div className="message-list">
-          {displayedMessages.map((message) => (
-            <article className={`message ${message.role}`} key={message.id}>
-              <div className="message-icon">
-                {message.avatar ?? (message.role === 'king' ? <User size={16} /> : <Bot size={16} />)}
-              </div>
-              <div className="message-bubble">
-                <div className="message-meta">
-                  <strong>{message.sender}</strong>
-                  {message.subtitle && <span>{message.subtitle}</span>}
-                </div>
-                <p>{message.content}</p>
-              </div>
-            </article>
-          ))}
-          {isCouncilThinking && (
-            <article className="message system">
-              <div className="message-icon">
-                <Bot size={16} />
-              </div>
-              <div className="message-bubble">
-                <div className="message-meta">
-                  <strong>Piece council</strong>
-                  <span>reading the board</span>
-                </div>
-                <p>Checking legal candidates against your command...</p>
-              </div>
-            </article>
-          )}
-        </div>
-
-        <div className="composer">
+        <div className="composer board-composer">
           <textarea
-            aria-label="Message the chess agent"
+            aria-label="Command your piece council"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -337,7 +361,7 @@ function App() {
             <CornerDownLeft size={18} />
           </button>
         </div>
-      </aside>
+      </section>
     </main>
   )
 }
