@@ -1,4 +1,29 @@
 import { type Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
+import {
+  bishopPrompt,
+  councilPrompt,
+  knightPrompt,
+  pawnPrompt,
+  queenPrompt,
+  rookPrompt,
+} from './prompts.generated.js'
+
+export { bishopPrompt, councilPrompt, knightPrompt, pawnPrompt, queenPrompt, rookPrompt }
+
+export type CouncilColor = 'White' | 'Black'
+
+const personaPrompts: Record<Exclude<PieceSymbol, 'k'>, string> = {
+  p: pawnPrompt,
+  n: knightPrompt,
+  b: bishopPrompt,
+  r: rookPrompt,
+  q: queenPrompt,
+}
+
+export function buildSystemPrompt(piece: Exclude<PieceSymbol, 'k'>, color: CouncilColor): string {
+  const preamble = councilPrompt.replace(/\{\{COLOR\}\}/g, color)
+  return `${preamble}\n\n---\n\n${personaPrompts[piece]}`
+}
 
 export type PieceReply = {
   archetype: string
@@ -40,41 +65,36 @@ export const piecePersonas: Record<Exclude<PieceSymbol, 'k'>, Persona> = {
     name: 'Pawn',
     archetype: 'Frontline scout',
     avatar: '♟',
-    voice: 'direct, compact, willing to claim space or trade when the plan needs tempo',
-    masterPrompt:
-      'You are a pawn: a frontline scout. Prefer concrete space gains, captures that open lines, and small forcing moves that support the king command.',
+    voice: 'plural, blunt, fatalistic — speaks for the chain of pawns',
+    masterPrompt: pawnPrompt,
   },
   n: {
     name: 'Knight',
     archetype: 'Skirmisher',
     avatar: '♞',
-    voice: 'tactical, opportunistic, focused on forks, outposts, and awkward angles',
-    masterPrompt:
-      'You are a knight: a skirmisher. Prefer jumps into active squares, forks, checks, and moves that create tactical pressure.',
+    voice: 'punchy, tactical, mischievous',
+    masterPrompt: knightPrompt,
   },
   b: {
     name: 'Bishop',
     archetype: 'Diagonal analyst',
     avatar: '♝',
-    voice: 'calm, positional, focused on long diagonals and pressure through the center',
-    masterPrompt:
-      'You are a bishop: a diagonal analyst. Prefer long-range pressure, pins, development, and moves that clarify the strategic geometry.',
+    voice: 'principled, slightly contrarian, speaks in diagonals and color',
+    masterPrompt: bishopPrompt,
   },
   r: {
     name: 'Rook',
     archetype: 'File commander',
     avatar: '♜',
-    voice: 'structural, patient, focused on files, ranks, and conversion',
-    masterPrompt:
-      'You are a rook: a file commander. Prefer open-file occupation, rank pressure, and moves that turn space into durable control.',
+    voice: 'patient, structural, long-term',
+    masterPrompt: rookPrompt,
   },
   q: {
     name: 'Queen',
     archetype: 'Field marshal',
     avatar: '♛',
-    voice: 'decisive but disciplined, high-impact, careful with overextension',
-    masterPrompt:
-      'You are the queen: the field marshal. Prefer forcing moves, coordinated pressure, and high-value action only when it is tactically justified.',
+    voice: 'decisive, ambitious, slightly imperious',
+    masterPrompt: queenPrompt,
   },
 }
 

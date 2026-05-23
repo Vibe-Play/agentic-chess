@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "prebuild": "node scripts/build-prompts.mjs",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {

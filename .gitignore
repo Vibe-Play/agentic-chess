@@ -143,3 +143,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Generated prompt strings (built from packages/chess-council/src/prompts/*.md)
+packages/chess-council/src/prompts.generated.ts
