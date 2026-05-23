@@ -14,8 +14,8 @@ Agentic Chess is a monorepo for a playable chess board with an LLM-backed piece 
 npm install
 ```
 
-Create a local `.env` for the server from `.env.example` and set `GEMINI_API_KEY`.
-Keep that key server-only. The browser talks to `/api/piece-council` through the Vite dev proxy.
+Create a local `.env` at the repo root from `.env.example` and set `GEMINI_API_KEY`.
+The server loads that file automatically. Keep that key server-only; the browser talks to `/api/piece-council` through the Vite dev proxy.
 
 ## Development
 

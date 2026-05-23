@@ -1,6 +1,33 @@
 import { createServer } from 'node:http'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Chess } from 'chess.js'
 import { buildPieceCouncilContext, piecePersonas } from '@agentic-chess/chess-council'
+
+const serverDir = dirname(fileURLToPath(import.meta.url))
+const repoRoot = resolve(serverDir, '../../..')
+
+function loadEnvFile(path) {
+  if (!existsSync(path)) return
+
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+
+    const separator = trimmed.indexOf('=')
+    if (separator === -1) continue
+
+    const key = trimmed.slice(0, separator).trim()
+    const rawValue = trimmed.slice(separator + 1).trim()
+    if (!key || process.env[key] !== undefined) continue
+
+    process.env[key] = rawValue.replace(/^(['"])(.*)\1$/, '$2')
+  }
+}
+
+loadEnvFile(resolve(repoRoot, '.env'))
+loadEnvFile(resolve(repoRoot, 'apps/server/.env'))
 
 const port = Number(process.env.PORT ?? 8787)
 const host = process.env.HOST ?? '127.0.0.1'
