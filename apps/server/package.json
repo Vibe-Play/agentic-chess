@@ -1,0 +1,15 @@
+{
+  "name": "@agentic-chess/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node --check src/server.mjs",
+    "dev": "node src/server.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@agentic-chess/chess-council": "0.1.0",
+    "chess.js": "^1.0.0"
+  }
+}

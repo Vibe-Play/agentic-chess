@@ -2,18 +2,25 @@ import { useCallback, useMemo, useState } from 'react'
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
 import { Bot, CornerDownLeft, User } from 'lucide-react'
 import { FlatChessBoard } from './components/FlatChessBoard'
+import { requestPieceCouncil } from './lib/pieceCouncilClient'
 
 type ChatMessage = {
+  avatar?: string
   id: number
-  role: 'agent' | 'player'
+  role: 'king' | 'piece' | 'system'
+  sender: string
+  subtitle?: string
   content: string
 }
 
 const initialMessages: ChatMessage[] = [
   {
     id: 1,
-    role: 'agent',
-    content: 'Board initialized. I can track legal moves, explain the current position, and suggest a candidate move.',
+    role: 'system',
+    sender: 'Piece council',
+    subtitle: 'legal-move orchestration ready',
+    content:
+      'Board initialized. Send a strategy as king and the most relevant pieces will reply with legal options.',
   },
 ]
 
@@ -25,54 +32,6 @@ function describeMove(move: Move) {
   const capture = move.captured ? ' captures' : ''
   const suffix = move.san.includes('+') ? ' with check' : move.san.includes('#') ? ' with mate' : ''
   return `${move.color === 'w' ? 'White' : 'Black'}: ${move.from}-${move.to}${capture} (${move.san})${suffix}`
-}
-
-function chooseCandidateMove(game: Chess) {
-  const moves = game.moves({ verbose: true })
-  if (moves.length === 0) return null
-
-  const checkmate = moves.find((move) => move.san.includes('#'))
-  if (checkmate) return checkmate
-
-  const checking = moves.find((move) => move.san.includes('+'))
-  if (checking) return checking
-
-  const capture = moves.find((move) => move.captured)
-  if (capture) return capture
-
-  const center = moves.find((move) => ['d4', 'e4', 'd5', 'e5'].includes(move.to))
-  return center ?? moves[0]
-}
-
-function agentReply(prompt: string, game: Chess) {
-  const normalized = prompt.toLowerCase()
-  const turn = game.turn() === 'w' ? 'White' : 'Black'
-
-  if (game.isCheckmate()) {
-    return `Checkmate is on the board. ${game.turn() === 'w' ? 'Black' : 'White'} has won.`
-  }
-
-  if (game.isDraw()) {
-    return 'The position is drawn by the current chess.js rules.'
-  }
-
-  if (normalized.includes('suggest') || normalized.includes('move') || normalized.includes('best')) {
-    const candidate = chooseCandidateMove(game)
-    if (!candidate) return 'There are no legal moves from this position.'
-    return `Candidate for ${turn}: ${candidate.san}. It is legal, ${candidate.captured ? 'wins material' : 'keeps the position moving'}, and the board is ready to animate it.`
-  }
-
-  if (normalized.includes('status') || normalized.includes('position') || normalized.includes('turn')) {
-    const legalCount = game.moves().length
-    const check = game.inCheck() ? ' The side to move is in check.' : ''
-    return `${turn} to move. ${legalCount} legal moves are available.${check}`
-  }
-
-  if (normalized.includes('undo')) {
-    return 'Undo is not exposed in the current minimal board surface. I can add it back as a small in-scene control later if needed.'
-  }
-
-  return `${turn} to move. Ask for a suggestion or click a piece to inspect its legal destinations.`
 }
 
 const capturedGlyphs: Record<PieceSymbol, string> = {
@@ -106,6 +65,7 @@ function App() {
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [draft, setDraft] = useState('')
+  const [isCouncilThinking, setCouncilThinking] = useState(false)
 
   const legalMoves = useMemo(() => {
     if (!selectedSquare) return []
@@ -128,12 +88,14 @@ function App() {
     return result
   }, [moveHistory])
 
-  const appendAgentMessage = useCallback((content: string) => {
+  const appendSystemMessage = useCallback((content: string) => {
     setMessages((current) => [
       ...current,
       {
         id: Date.now() + Math.random(),
-        role: 'agent',
+        role: 'system',
+        sender: 'Board',
+        subtitle: 'move committed',
         content,
       },
     ])
@@ -151,7 +113,7 @@ function App() {
           setGame(next)
           setSelectedSquare(null)
           setLastMove({ from: move.from, to: move.to })
-          appendAgentMessage(describeMove(move))
+          appendSystemMessage(describeMove(move))
           return
         }
       }
@@ -163,28 +125,73 @@ function App() {
 
       setSelectedSquare(null)
     },
-    [appendAgentMessage, game, legalMoves, selectedSquare],
+    [appendSystemMessage, game, legalMoves, selectedSquare],
   )
 
-  const sendMessage = useCallback(() => {
+  const sendMessage = useCallback(async () => {
     const trimmed = draft.trim()
-    if (!trimmed) return
+    if (!trimmed || isCouncilThinking) return
 
+    const sideToMove = game.turn() === 'w' ? 'White' : 'Black'
+    const id = Date.now()
+    setDraft('')
     setMessages((current) => [
       ...current,
       {
-        id: Date.now(),
-        role: 'player',
+        avatar: '♚',
+        id,
+        role: 'king',
+        sender: 'King',
+        subtitle: `${sideToMove} command`,
         content: trimmed,
       },
-      {
-        id: Date.now() + 1,
-        role: 'agent',
-        content: agentReply(trimmed, game),
-      },
     ])
-    setDraft('')
-  }, [draft, game])
+    setCouncilThinking(true)
+
+    const result = await requestPieceCouncil(game, trimmed, 3)
+    const sourceLabel = result.source === 'gemini' ? 'Gemini counsel' : 'local counsel'
+
+    setMessages((current) => {
+      if (result.terminal) {
+        return [
+          ...current,
+          {
+            id: id + 1,
+            role: 'system',
+            sender: 'Board',
+            subtitle: 'terminal position',
+            content: result.terminal,
+          },
+        ]
+      }
+
+      if (result.replies.length === 0) {
+        return [
+          ...current,
+          {
+            id: id + 1,
+            role: 'system',
+            sender: 'Piece council',
+            subtitle: sourceLabel,
+            content: 'No non-king piece has a legal response to that command from this position.',
+          },
+        ]
+      }
+
+      return [
+        ...current,
+        ...result.replies.map((reply, index) => ({
+          avatar: reply.avatar,
+          content: reply.content,
+          id: id + index + 1,
+          role: 'piece' as const,
+          sender: reply.sender,
+          subtitle: `${reply.subtitle} · ${sourceLabel}`,
+        })),
+      ]
+    })
+    setCouncilThinking(false)
+  }, [draft, game, isCouncilThinking])
 
   return (
     <main className="app-shell">
@@ -217,8 +224,8 @@ function App() {
       <aside className="chat-panel" aria-label="Agent chat">
         <div className="chat-heading">
           <div>
-            <p className="eyebrow">Sidecar</p>
-            <h2>Agent chat</h2>
+            <p className="eyebrow">Thread</p>
+            <h2>Piece council</h2>
           </div>
           <Bot size={22} />
         </div>
@@ -226,10 +233,32 @@ function App() {
         <div className="message-list">
           {messages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>
-              <div className="message-icon">{message.role === 'agent' ? <Bot size={16} /> : <User size={16} />}</div>
-              <p>{message.content}</p>
+              <div className="message-icon">
+                {message.avatar ?? (message.role === 'king' ? <User size={16} /> : <Bot size={16} />)}
+              </div>
+              <div className="message-bubble">
+                <div className="message-meta">
+                  <strong>{message.sender}</strong>
+                  {message.subtitle && <span>{message.subtitle}</span>}
+                </div>
+                <p>{message.content}</p>
+              </div>
             </article>
           ))}
+          {isCouncilThinking && (
+            <article className="message system">
+              <div className="message-icon">
+                <Bot size={16} />
+              </div>
+              <div className="message-bubble">
+                <div className="message-meta">
+                  <strong>Piece council</strong>
+                  <span>reading the board</span>
+                </div>
+                <p>Checking legal candidates against your command...</p>
+              </div>
+            </article>
+          )}
         </div>
 
         <div className="composer">
@@ -243,9 +272,9 @@ function App() {
                 sendMessage()
               }
             }}
-            placeholder="Ask for a move, status, or plan..."
+            placeholder="Command your pieces as king..."
           />
-          <button type="button" onClick={sendMessage} aria-label="Send message">
+          <button type="button" onClick={sendMessage} aria-label="Send message" disabled={isCouncilThinking}>
             <CornerDownLeft size={18} />
           </button>
         </div>

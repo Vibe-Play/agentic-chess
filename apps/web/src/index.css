@@ -107,6 +107,12 @@ h2 {
   transform: translateY(-1px);
 }
 
+.composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .scene-shell {
   position: relative;
   min-height: 0;
@@ -337,23 +343,58 @@ h2 {
   color: #9db8cc;
 }
 
-.message.player .message-icon {
+.message.king .message-icon {
   background: #241d12;
   color: #d8b75f;
 }
 
-.message p {
-  margin: 0;
+.message.piece .message-icon {
+  background: #172434;
+  color: #c8d5df;
+  font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.message-bubble {
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.055);
   color: #e5edf5;
-  font-size: 0.94rem;
-  line-height: 1.45;
 }
 
-.message.player p {
+.message.king .message-bubble {
   background: rgba(216, 183, 95, 0.12);
+}
+
+.message.piece .message-bubble {
+  background: rgba(18, 24, 31, 0.94);
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+  color: #dce7f2;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.message-meta strong {
+  font-weight: 800;
+}
+
+.message-meta span {
+  color: #8aa2b5;
+}
+
+.message p {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.45;
 }
 
 .composer {

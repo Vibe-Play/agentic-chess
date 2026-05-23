@@ -3,23 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0"
-  },
-  "dependencies": {
-    "chess.js": "^1.0.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "typescript": "~5.9.3",
-    "vite": "^7.2.4"
+    "build": "npm run build --workspace @agentic-chess/chess-council && npm run build --workspace @agentic-chess/server && npm run build --workspace @agentic-chess/web",
+    "dev": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/web",
+    "dev:server": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/server",
+    "dev:web": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/web",
+    "preview": "npm run preview --workspace @agentic-chess/web"
   }
 }
