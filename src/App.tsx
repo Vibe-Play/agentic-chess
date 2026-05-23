@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Chess, type Move, type Square } from 'chess.js'
 import { Bot, CornerDownLeft, User } from 'lucide-react'
 import { ChessBoardScene } from './components/ChessBoardScene'
+import { FlatChessBoard } from './components/FlatChessBoard'
 
 type ChatMessage = {
   id: number
@@ -69,7 +70,7 @@ function agentReply(prompt: string, game: Chess) {
   }
 
   if (normalized.includes('undo')) {
-    return 'Use the undo control above the board to roll back one ply while preserving the chat context.'
+    return 'Undo is not exposed in the current minimal board surface. I can add it back as a small in-scene control later if needed.'
   }
 
   return `${turn} to move. Ask for a suggestion or click a piece to inspect its legal destinations.`
@@ -160,15 +161,24 @@ function App() {
           >
             {viewMode === '3d' ? '2D' : '3D'}
           </button>
-          <ChessBoardScene
-            game={game}
-            orientation="white"
-            viewMode={viewMode}
-            selectedSquare={selectedSquare}
-            legalTargets={legalMoves.map((move) => move.to)}
-            lastMove={lastMove}
-            onSquareSelect={handleSquareSelect}
-          />
+          {viewMode === '2d' ? (
+            <FlatChessBoard
+              game={game}
+              selectedSquare={selectedSquare}
+              legalTargets={legalMoves.map((move) => move.to)}
+              lastMove={lastMove}
+              onSquareSelect={handleSquareSelect}
+            />
+          ) : (
+            <ChessBoardScene
+              game={game}
+              orientation="white"
+              selectedSquare={selectedSquare}
+              legalTargets={legalMoves.map((move) => move.to)}
+              lastMove={lastMove}
+              onSquareSelect={handleSquareSelect}
+            />
+          )}
         </div>
 
         <footer className="move-strip" aria-label="Move history">

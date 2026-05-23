@@ -1,6 +1,6 @@
 import { Suspense, useMemo, useRef } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Environment, OrbitControls, OrthographicCamera, PerspectiveCamera, useGLTF } from '@react-three/drei'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { ContactShadows, Environment, OrbitControls, PerspectiveCamera, Text, useGLTF } from '@react-three/drei'
 import { type Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 import * as THREE from 'three'
 
@@ -19,7 +19,6 @@ type LastMove = {
 type ChessBoardSceneProps = {
   game: Chess
   orientation: 'white' | 'black'
-  viewMode: '3d' | '2d'
   selectedSquare: Square | null
   legalTargets: Square[]
   lastMove: LastMove
@@ -28,6 +27,8 @@ type ChessBoardSceneProps = {
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const ranks = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+const lightSquareColor = '#c7ab82'
+const darkSquareColor = '#2d211b'
 const pieceNames: Record<PieceSymbol, string> = {
   p: 'pawn',
   n: 'knight',
@@ -79,7 +80,7 @@ export function ChessBoardScene(props: ChessBoardSceneProps) {
     >
       <color attach="background" args={['#020305']} />
       <fog attach="fog" args={['#020305', 17, 32]} />
-      <SceneCamera viewMode={props.viewMode} />
+      <SceneCamera />
       <SceneLighting />
       <group position={[0, -0.2, 0]}>
         <Board
@@ -89,6 +90,7 @@ export function ChessBoardScene(props: ChessBoardSceneProps) {
           lastMove={props.lastMove}
           onSquareSelect={props.onSquareSelect}
         />
+        <BoardCoordinates orientation={props.orientation} />
         <Suspense fallback={null}>
           {pieces.map((piece) => (
             <ChessPiece
@@ -102,45 +104,27 @@ export function ChessBoardScene(props: ChessBoardSceneProps) {
       </group>
       <ContactShadows position={[0, -0.29, 0]} opacity={0.58} blur={2.8} far={9} />
       <Environment preset="city" environmentIntensity={0.18} />
-      {props.viewMode === '3d' && (
-        <OrbitControls
-          makeDefault
-          enableDamping
-          enablePan
-          enableRotate
-          enableZoom
-          dampingFactor={0.08}
-          panSpeed={0.85}
-          rotateSpeed={0.85}
-          zoomSpeed={0.9}
-          screenSpacePanning
-          minDistance={5}
-          maxDistance={24}
-          maxPolarAngle={Math.PI / 2.05}
-          minPolarAngle={Math.PI / 8}
-        />
-      )}
+      <OrbitControls
+        makeDefault
+        enableDamping
+        enablePan
+        enableRotate
+        enableZoom
+        dampingFactor={0.08}
+        panSpeed={0.85}
+        rotateSpeed={0.85}
+        zoomSpeed={0.9}
+        screenSpacePanning
+        minDistance={5}
+        maxDistance={24}
+        maxPolarAngle={Math.PI / 2.05}
+        minPolarAngle={Math.PI / 8}
+      />
     </Canvas>
   )
 }
 
-function SceneCamera({ viewMode }: { viewMode: '3d' | '2d' }) {
-  const { size } = useThree()
-  const orthographicZoom = Math.max(36, Math.min(size.width, size.height) / 10.8)
-
-  if (viewMode === '2d') {
-    return (
-      <OrthographicCamera
-        makeDefault
-        position={[0, 12, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        zoom={orthographicZoom}
-        near={0.1}
-        far={80}
-      />
-    )
-  }
-
+function SceneCamera() {
   return (
     <PerspectiveCamera
       makeDefault
@@ -150,6 +134,48 @@ function SceneCamera({ viewMode }: { viewMode: '3d' | '2d' }) {
       far={90}
       onUpdate={(camera) => camera.lookAt(0, 0, 0)}
     />
+  )
+}
+
+function BoardCoordinates({ orientation }: { orientation: 'white' | 'black' }) {
+  const visibleFiles = orientation === 'white' ? files : [...files].reverse()
+  const visibleRanks = orientation === 'white' ? ranks : [...ranks].reverse()
+
+  return (
+    <group position={[0, 0.18, 0]}>
+      {visibleFiles.map((file, index) => {
+        const x = index - 3.5
+        return (
+          <Text
+            key={`file-${file}`}
+            position={[x, 0, -4.28]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            fontSize={0.22}
+            anchorX="center"
+            anchorY="middle"
+            color="#eeeed2"
+          >
+            {file}
+          </Text>
+        )
+      })}
+      {visibleRanks.map((rank, index) => {
+        const z = index - 3.5
+        return (
+          <Text
+            key={`rank-${rank}`}
+            position={[-4.28, 0, z]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            fontSize={0.22}
+            anchorX="center"
+            anchorY="middle"
+            color="#eeeed2"
+          >
+            {rank}
+          </Text>
+        )
+      })}
+    </group>
   )
 }
 
@@ -205,7 +231,7 @@ function Board({
       </mesh>
       <mesh receiveShadow position={[0, -0.04, 0]}>
         <boxGeometry args={[8.52, 0.12, 8.52]} />
-        <meshStandardMaterial color="#0d0a08" roughness={0.42} metalness={0.16} />
+        <meshStandardMaterial color="#111510" roughness={0.42} metalness={0.16} />
       </mesh>
       {squares.map((square) => {
         const isSelected = selectedSquare === square.square
@@ -245,7 +271,7 @@ function BoardSquare({
   isLastMove: boolean
   onSquareSelect: (square: Square) => void
 }) {
-  const color = isSelected ? '#f0c94f' : isLastMove ? '#557f72' : isLight ? '#c7ab82' : '#2d211b'
+  const color = isSelected ? '#f0c94f' : isLastMove ? '#557f72' : isLight ? lightSquareColor : darkSquareColor
   const emissive = isLegal ? '#3fb27f' : '#000000'
 
   return (

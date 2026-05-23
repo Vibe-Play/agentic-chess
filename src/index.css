@@ -143,6 +143,123 @@ h2 {
   display: block;
 }
 
+.flat-board-shell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: min(5.6vh, 44px);
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.035), transparent 35%),
+    #020305;
+}
+
+.flat-board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  width: min(100%, calc(100vh - 126px), 980px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.flat-square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.flat-square.light {
+  background: #c7ab82;
+}
+
+.flat-square.dark {
+  background: #2d211b;
+}
+
+.flat-square.last-move {
+  box-shadow: inset 0 0 0 999px rgba(216, 183, 95, 0.22);
+}
+
+.flat-square.selected {
+  box-shadow: inset 0 0 0 999px rgba(239, 199, 79, 0.4);
+}
+
+.flat-square.legal::after {
+  content: "";
+  position: absolute;
+  width: 22%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(12, 20, 14, 0.28);
+}
+
+.flat-piece {
+  position: relative;
+  z-index: 1;
+  display: block;
+  line-height: 0.88;
+  font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
+  font-size: clamp(3.2rem, 9.2vmin, 7.8rem);
+  font-weight: 700;
+  transform: translateY(0.01em);
+  user-select: none;
+}
+
+.flat-piece.white {
+  color: #f7f7f2;
+  text-shadow:
+    0 2px 0 #585858,
+    0 -1px 0 #585858,
+    1px 0 0 #585858,
+    -1px 0 0 #585858,
+    0 7px 15px rgba(0, 0, 0, 0.22);
+}
+
+.flat-piece.black {
+  color: #56534e;
+  text-shadow:
+    0 2px 0 #272521,
+    0 -1px 0 #272521,
+    1px 0 0 #272521,
+    -1px 0 0 #272521,
+    0 7px 15px rgba(0, 0, 0, 0.22);
+}
+
+.rank-label,
+.file-label {
+  position: absolute;
+  z-index: 2;
+  color: rgba(239, 231, 205, 0.9);
+  font-size: clamp(1rem, 2.2vmin, 1.6rem);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  user-select: none;
+}
+
+.rank-label {
+  top: 8%;
+  left: 7%;
+}
+
+.file-label {
+  right: 7%;
+  bottom: 6%;
+}
+
 .move-strip {
   display: flex;
   align-items: center;
