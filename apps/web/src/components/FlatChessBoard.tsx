@@ -2,6 +2,7 @@ import { type Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 
 type FlatChessBoardProps = {
   game: Chess
+  isProcessing: boolean
   selectedSquare: Square | null
   legalTargets: Square[]
   lastMove: { from: Square; to: Square } | null
@@ -74,6 +75,7 @@ function isSameSuggestion(left: PieceMoveSuggestion | null, right: PieceMoveSugg
 
 export function FlatChessBoard({
   game,
+  isProcessing,
   selectedSquare,
   legalTargets,
   lastMove,
@@ -88,6 +90,12 @@ export function FlatChessBoard({
   return (
     <div className="flat-board-shell" aria-label="2D chessboard">
       <div className="flat-board">
+        {isProcessing && (
+          <div className="board-processing" role="status" aria-live="polite">
+            <span className="processing-orbit" aria-hidden="true" />
+            <span>Processing council response</span>
+          </div>
+        )}
         {ranks.map((rank, rankIndex) =>
           files.map((file, fileIndex) => {
             const square = toSquare(file, rank)

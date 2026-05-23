@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
-import { CornerDownLeft } from 'lucide-react'
+import { CornerDownLeft, LoaderCircle } from 'lucide-react'
 import { FlatChessBoard, type PieceMoveSuggestion, type PieceReplyBubble } from './components/FlatChessBoard'
 import { requestPieceCouncil } from './lib/pieceCouncilClient'
 
@@ -315,6 +315,7 @@ function App() {
           </div>
           <FlatChessBoard
             game={game}
+            isProcessing={isCouncilThinking}
             selectedSquare={selectedSquare}
             legalTargets={legalMoves.map((move) => move.to)}
             lastMove={lastMove}
@@ -349,8 +350,14 @@ function App() {
                 sendMessage()
               }
             }}
-            placeholder={isViewingArchive ? 'Viewing archived turn thread' : 'Command your pieces as king...'}
-            disabled={isViewingArchive}
+            placeholder={
+              isViewingArchive
+                ? 'Viewing archived turn thread'
+                : isCouncilThinking
+                  ? 'Processing council response...'
+                  : 'Command your pieces as king...'
+            }
+            disabled={isCouncilThinking || isViewingArchive}
           />
           <button
             type="button"
@@ -358,7 +365,7 @@ function App() {
             aria-label="Send message"
             disabled={isCouncilThinking || isViewingArchive}
           >
-            <CornerDownLeft size={18} />
+            {isCouncilThinking ? <LoaderCircle className="send-spinner" size={18} /> : <CornerDownLeft size={18} />}
           </button>
         </div>
       </section>
