@@ -13,16 +13,34 @@ type ChatMessage = {
   content: string
 }
 
-const initialMessages: ChatMessage[] = [
-  {
-    id: 1,
+type TurnThread = {
+  id: string
+  messages: ChatMessage[]
+  subtitle: string
+  title: string
+}
+
+function sideName(side: Color) {
+  return side === 'w' ? 'White' : 'Black'
+}
+
+function turnNumberFromHalfMoves(halfMoves: number) {
+  return Math.floor(halfMoves / 2) + 1
+}
+
+function currentThreadTitle(game: Chess) {
+  return `${sideName(game.turn())} turn ${turnNumberFromHalfMoves(game.history().length)}`
+}
+
+function createTurnIntro(side: Color, halfMoves: number): ChatMessage {
+  return {
+    id: Date.now() + Math.random(),
     role: 'system',
     sender: 'Piece council',
-    subtitle: 'legal-move orchestration ready',
-    content:
-      'Board initialized. Send a strategy as king and the most relevant pieces will reply with legal options.',
-  },
-]
+    subtitle: `${sideName(side)} to move · turn ${turnNumberFromHalfMoves(halfMoves)}`,
+    content: 'New turn thread started. Command your pieces as king and the top legal candidates will respond.',
+  }
+}
 
 function cloneGame(game: Chess) {
   return new Chess(game.fen())
@@ -63,7 +81,9 @@ function App() {
   const [game, setGame] = useState(() => new Chess())
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [createTurnIntro('w', 0)])
+  const [threadHistory, setThreadHistory] = useState<TurnThread[]>([])
+  const [selectedThreadId, setSelectedThreadId] = useState('current')
   const [draft, setDraft] = useState('')
   const [isCouncilThinking, setCouncilThinking] = useState(false)
 
@@ -88,21 +108,17 @@ function App() {
     return result
   }, [moveHistory])
 
-  const appendSystemMessage = useCallback((content: string) => {
-    setMessages((current) => [
-      ...current,
-      {
-        id: Date.now() + Math.random(),
-        role: 'system',
-        sender: 'Board',
-        subtitle: 'move committed',
-        content,
-      },
-    ])
-  }, [])
+  const displayedMessages = useMemo(() => {
+    if (selectedThreadId === 'current') return messages
+    return threadHistory.find((thread) => thread.id === selectedThreadId)?.messages ?? messages
+  }, [messages, selectedThreadId, threadHistory])
+
+  const isViewingArchive = selectedThreadId !== 'current'
 
   const handleSquareSelect = useCallback(
     (square: Square) => {
+      if (isCouncilThinking) return
+
       const piece = game.get(square)
 
       if (selectedSquare) {
@@ -110,10 +126,30 @@ function App() {
         if (validTarget) {
           const next = cloneGame(game)
           const move = next.move({ from: selectedSquare, to: square, promotion: 'q' })
+          const boardMessage: ChatMessage = {
+            id: Date.now() + Math.random(),
+            role: 'system',
+            sender: 'Board',
+            subtitle: 'move committed',
+            content: describeMove(move),
+          }
+          const archivedMessages = [...messages, boardMessage]
+          const turnTitle = currentThreadTitle(game)
+
           setGame(next)
           setSelectedSquare(null)
           setLastMove({ from: move.from, to: move.to })
-          appendSystemMessage(describeMove(move))
+          setThreadHistory((current) => [
+            {
+              id: `${move.lan}-${Date.now()}`,
+              messages: archivedMessages,
+              subtitle: `Completed with ${move.san}`,
+              title: turnTitle,
+            },
+            ...current,
+          ])
+          setMessages([createTurnIntro(next.turn(), next.history().length)])
+          setSelectedThreadId('current')
           return
         }
       }
@@ -125,16 +161,17 @@ function App() {
 
       setSelectedSquare(null)
     },
-    [appendSystemMessage, game, legalMoves, selectedSquare],
+    [game, isCouncilThinking, legalMoves, messages, selectedSquare],
   )
 
   const sendMessage = useCallback(async () => {
     const trimmed = draft.trim()
-    if (!trimmed || isCouncilThinking) return
+    if (!trimmed || isCouncilThinking || isViewingArchive) return
 
     const sideToMove = game.turn() === 'w' ? 'White' : 'Black'
     const id = Date.now()
     setDraft('')
+    setSelectedThreadId('current')
     setMessages((current) => [
       ...current,
       {
@@ -191,7 +228,7 @@ function App() {
       ]
     })
     setCouncilThinking(false)
-  }, [draft, game, isCouncilThinking])
+  }, [draft, game, isCouncilThinking, isViewingArchive])
 
   return (
     <main className="app-shell">
@@ -227,11 +264,25 @@ function App() {
             <p className="eyebrow">Thread</p>
             <h2>Piece council</h2>
           </div>
-          <Bot size={22} />
+          <div className="thread-actions">
+            <select
+              aria-label="Thread history"
+              value={selectedThreadId}
+              onChange={(event) => setSelectedThreadId(event.target.value)}
+            >
+              <option value="current">{currentThreadTitle(game)} · active</option>
+              {threadHistory.map((thread) => (
+                <option key={thread.id} value={thread.id}>
+                  {thread.title} · {thread.subtitle}
+                </option>
+              ))}
+            </select>
+            <Bot size={22} />
+          </div>
         </div>
 
         <div className="message-list">
-          {messages.map((message) => (
+          {displayedMessages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>
               <div className="message-icon">
                 {message.avatar ?? (message.role === 'king' ? <User size={16} /> : <Bot size={16} />)}
@@ -272,9 +323,15 @@ function App() {
                 sendMessage()
               }
             }}
-            placeholder="Command your pieces as king..."
+            placeholder={isViewingArchive ? 'Viewing archived turn thread' : 'Command your pieces as king...'}
+            disabled={isViewingArchive}
           />
-          <button type="button" onClick={sendMessage} aria-label="Send message" disabled={isCouncilThinking}>
+          <button
+            type="button"
+            onClick={sendMessage}
+            aria-label="Send message"
+            disabled={isCouncilThinking || isViewingArchive}
+          >
             <CornerDownLeft size={18} />
           </button>
         </div>
