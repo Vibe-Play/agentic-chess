@@ -43,7 +43,9 @@ function createTurnIntro(side: Color, halfMoves: number): ChatMessage {
 }
 
 function cloneGame(game: Chess) {
-  return new Chess(game.fen())
+  const next = new Chess()
+  next.loadPgn(game.pgn())
+  return next
 }
 
 function describeMove(move: Move) {
