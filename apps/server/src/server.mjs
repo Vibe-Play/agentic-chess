@@ -34,33 +34,45 @@ const host = process.env.HOST ?? '127.0.0.1'
 const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'
 const maxBodyBytes = 64_000
 
+class HttpError extends Error {
+  constructor(statusCode, message) {
+    super(message)
+    this.statusCode = statusCode
+  }
+}
+
 function sendJson(response, statusCode, payload) {
+  if (response.writableEnded) return
+
   response.writeHead(statusCode, {
     'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Origin': '*',
     'Content-Type': 'application/json; charset=utf-8',
   })
-  response.end(JSON.stringify(payload))
+  response.end(statusCode === 204 ? undefined : JSON.stringify(payload))
 }
 
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
     let body = ''
+    let rejected = false
 
     request.on('data', (chunk) => {
+      if (rejected) return
       body += chunk
       if (body.length > maxBodyBytes) {
-        reject(new Error('Request body is too large.'))
-        request.destroy()
+        rejected = true
+        reject(new HttpError(413, 'Request body is too large.'))
       }
     })
 
     request.on('end', () => {
+      if (rejected) return
       try {
         resolve(body ? JSON.parse(body) : {})
       } catch {
-        reject(new Error('Request body must be valid JSON.'))
+        reject(new HttpError(400, 'Request body must be valid JSON.'))
       }
     })
 
@@ -155,6 +167,13 @@ function mergeGeminiReplies(rawReplies, legalReplies) {
 }
 
 async function askGemini(context) {
+  if (context.replies.length === 0) {
+    return {
+      source: 'fallback',
+      replies: [],
+    }
+  }
+
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     return {
@@ -283,7 +302,7 @@ async function handlePieceCouncil(request, response) {
   }
 }
 
-createServer(async (request, response) => {
+async function routeRequest(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
   if (request.method === 'OPTIONS') {
@@ -302,6 +321,16 @@ createServer(async (request, response) => {
   }
 
   sendJson(response, 404, { error: 'not found' })
+}
+
+createServer((request, response) => {
+  routeRequest(request, response).catch((error) => {
+    const statusCode = error instanceof HttpError ? error.statusCode : 500
+    if (statusCode === 500) console.error(error)
+    sendJson(response, statusCode, {
+      error: error instanceof Error ? error.message : 'Unexpected server error.',
+    })
+  })
 }).listen(port, host, () => {
   console.log(`agentic-chess server listening on http://${host}:${port}`)
 })
