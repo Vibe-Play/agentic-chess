@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Chess, type Move, type Square } from 'chess.js'
+import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
 import { Bot, CornerDownLeft, User } from 'lucide-react'
-import { ChessBoardScene } from './components/ChessBoardScene'
 import { FlatChessBoard } from './components/FlatChessBoard'
 
 type ChatMessage = {
@@ -76,11 +75,43 @@ function agentReply(prompt: string, game: Chess) {
   return `${turn} to move. Ask for a suggestion or click a piece to inspect its legal destinations.`
 }
 
+const capturedGlyphs: Record<PieceSymbol, string> = {
+  p: '♟',
+  n: '♞',
+  b: '♝',
+  r: '♜',
+  q: '♛',
+  k: '♚',
+}
+
+const pieceValues: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
+
+function CapturedRow({ side, pieces }: { side: Color; pieces: PieceSymbol[] }) {
+  const label = side === 'w' ? 'White lost' : 'Black lost'
+  const score = pieces.reduce((sum, p) => sum + pieceValues[p], 0)
+  return (
+    <div className={`captured-row ${side === 'w' ? 'white' : 'black'}`}>
+      <span className="captured-label">{label}</span>
+      <div className="captured-pieces">
+        {pieces.length === 0 ? (
+          <span className="captured-empty">—</span>
+        ) : (
+          pieces.map((p, i) => (
+            <span key={`${p}-${i}`} className="captured-piece">
+              {capturedGlyphs[p]}
+            </span>
+          ))
+        )}
+      </div>
+      {score > 0 && <span className="captured-score">{score}</span>}
+    </div>
+  )
+}
+
 function App() {
   const [game, setGame] = useState(() => new Chess())
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null)
-  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d')
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [draft, setDraft] = useState('')
 
@@ -90,6 +121,20 @@ function App() {
   }, [game, selectedSquare])
 
   const moveHistory = useMemo(() => game.history({ verbose: true }), [game])
+
+  const captured = useMemo(() => {
+    const result: Record<Color, PieceSymbol[]> = { w: [], b: [] }
+    for (const move of moveHistory) {
+      if (!move.captured) continue
+      const victimColor: Color = move.color === 'w' ? 'b' : 'w'
+      result[victimColor].push(move.captured)
+    }
+    const order: PieceSymbol[] = ['q', 'r', 'b', 'n', 'p']
+    const rank = (p: PieceSymbol) => order.indexOf(p)
+    result.w.sort((a, b) => rank(a) - rank(b))
+    result.b.sort((a, b) => rank(a) - rank(b))
+    return result
+  }, [moveHistory])
 
   const appendAgentMessage = useCallback((content: string) => {
     setMessages((current) => [
@@ -153,32 +198,18 @@ function App() {
     <main className="app-shell">
       <section className="board-workspace" aria-label="3D chess workspace">
         <div className="scene-shell">
-          <button
-            type="button"
-            className="scene-mode-toggle"
-            onClick={() => setViewMode((mode) => (mode === '3d' ? '2d' : '3d'))}
-            aria-label={`Switch to ${viewMode === '3d' ? '2D' : '3D'} board view`}
-          >
-            {viewMode === '3d' ? '2D' : '3D'}
-          </button>
-          {viewMode === '2d' ? (
-            <FlatChessBoard
-              game={game}
-              selectedSquare={selectedSquare}
-              legalTargets={legalMoves.map((move) => move.to)}
-              lastMove={lastMove}
-              onSquareSelect={handleSquareSelect}
-            />
-          ) : (
-            <ChessBoardScene
-              game={game}
-              orientation="white"
-              selectedSquare={selectedSquare}
-              legalTargets={legalMoves.map((move) => move.to)}
-              lastMove={lastMove}
-              onSquareSelect={handleSquareSelect}
-            />
-          )}
+          <FlatChessBoard
+            game={game}
+            selectedSquare={selectedSquare}
+            legalTargets={legalMoves.map((move) => move.to)}
+            lastMove={lastMove}
+            onSquareSelect={handleSquareSelect}
+          />
+        </div>
+
+        <div className="captured-strip" aria-label="Captured pieces">
+          <CapturedRow side="b" pieces={captured.b} />
+          <CapturedRow side="w" pieces={captured.w} />
         </div>
 
         <footer className="move-strip" aria-label="Move history">
