@@ -52,14 +52,13 @@ button {
 
 .board-workspace {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
-  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 6px;
   height: calc(100vh - 24px);
   min-height: 0;
   overflow: hidden;
 }
 
-.captured-strip,
 .move-strip,
 .chat-panel {
   border: 1px solid rgba(255, 255, 255, 0.065);
@@ -240,64 +239,34 @@ h2 {
   bottom: 6%;
 }
 
-.captured-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  border-radius: 8px;
-}
-
 .captured-row {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 30px;
-}
-
-.captured-label {
-  color: #8aa2b5;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.captured-pieces {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
   min-height: 22px;
+  padding: 0 4px;
   line-height: 1;
 }
 
 .captured-piece {
   font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
-  font-size: 1.4rem;
+  font-size: 1.15rem;
 }
 
 .captured-row.white .captured-piece {
   color: #ffffff;
-  text-shadow: 0 0 1px #2f2f2f, 0 1px 2px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 0 1px #2f2f2f, 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .captured-row.black .captured-piece {
   color: #2f2f2f;
-  text-shadow: 0 0 1px #000000, 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.captured-empty {
-  color: rgba(184, 198, 210, 0.35);
-  font-size: 0.95rem;
+  text-shadow: 0 0 1px #000000, 0 1px 1px rgba(0, 0, 0, 0.6);
 }
 
 .captured-score {
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(216, 183, 95, 0.12);
-  color: #d8b75f;
-  font-size: 0.74rem;
+  margin-left: 4px;
+  color: #8aa2b5;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 

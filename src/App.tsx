@@ -87,23 +87,15 @@ const capturedGlyphs: Record<PieceSymbol, string> = {
 const pieceValues: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
 
 function CapturedRow({ side, pieces }: { side: Color; pieces: PieceSymbol[] }) {
-  const label = side === 'w' ? 'White lost' : 'Black lost'
   const score = pieces.reduce((sum, p) => sum + pieceValues[p], 0)
   return (
     <div className={`captured-row ${side === 'w' ? 'white' : 'black'}`}>
-      <span className="captured-label">{label}</span>
-      <div className="captured-pieces">
-        {pieces.length === 0 ? (
-          <span className="captured-empty">—</span>
-        ) : (
-          pieces.map((p, i) => (
-            <span key={`${p}-${i}`} className="captured-piece">
-              {capturedGlyphs[p]}
-            </span>
-          ))
-        )}
-      </div>
-      {score > 0 && <span className="captured-score">{score}</span>}
+      {pieces.map((p, i) => (
+        <span key={`${p}-${i}`} className="captured-piece">
+          {capturedGlyphs[p]}
+        </span>
+      ))}
+      {score > 0 && <span className="captured-score">+{score}</span>}
     </div>
   )
 }
@@ -196,7 +188,9 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="board-workspace" aria-label="3D chess workspace">
+      <section className="board-workspace" aria-label="Chess workspace">
+        <CapturedRow side="b" pieces={captured.b} />
+
         <div className="scene-shell">
           <FlatChessBoard
             game={game}
@@ -207,10 +201,7 @@ function App() {
           />
         </div>
 
-        <div className="captured-strip" aria-label="Captured pieces">
-          <CapturedRow side="b" pieces={captured.b} />
-          <CapturedRow side="w" pieces={captured.w} />
-        </div>
+        <CapturedRow side="w" pieces={captured.w} />
 
         <footer className="move-strip" aria-label="Move history">
           {moveHistory.length === 0 ? (
