@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "node --check src/server.mjs",
+    "build": "node --check src/council-core.mjs && node --check src/server.mjs",
     "dev": "node src/server.mjs",
     "start": "node src/server.mjs"
   },

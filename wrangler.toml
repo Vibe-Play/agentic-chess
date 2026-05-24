@@ -1,0 +1,14 @@
+name = "agentic-chess"
+main = "apps/worker/src/index.mjs"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "apps/web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[vars]
+GEMINI_MODEL = "gemini-2.5-flash"
+
+[observability]
+enabled = true

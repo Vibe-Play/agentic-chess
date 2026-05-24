@@ -216,7 +216,7 @@ export function MultiplayerGame() {
 
     try {
       const result = await requestPieceCouncil(chess, trimmed, 3)
-      const sourceLabel = result.source === 'gemini' ? 'Gemini counsel' : 'local counsel'
+      const sourceLabel = result.source === 'gemini' ? 'Council' : 'local counsel'
 
       if (result.terminal) {
         setCouncilNote(result.terminal)

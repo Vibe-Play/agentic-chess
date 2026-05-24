@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
-import { CornerDownLeft, LoaderCircle } from 'lucide-react'
+import { CornerDownLeft, LoaderCircle, X } from 'lucide-react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import {
+  bishopPrompt,
+  knightPrompt,
+  pawnPrompt,
+  queenPrompt,
+  rookPrompt,
+} from '@agentic-chess/chess-council'
 import { FlatChessBoard, type PieceMoveSuggestion, type PieceReplyBubble } from './components/FlatChessBoard'
 import { requestPieceCouncil, type PieceCouncilTraceEvent } from './lib/pieceCouncilClient'
 import { Lobby } from './pages/Lobby'
@@ -36,7 +43,27 @@ type CouncilRoomEvent = {
   tone?: 'king' | 'piece' | 'system'
 }
 
+type PromptClassId = Exclude<PieceSymbol, 'k'>
+
+type PromptClassDefinition = {
+  defaultPrompt: string
+  icon: string
+  id: PromptClassId
+  name: string
+  role: string
+}
+
+type PromptTextSizes = Partial<Record<PromptClassId, number>>
+
+type KingDirectiveSuggestion = {
+  label: string
+  priority: number
+  text: string
+}
+
 const gameSessionKey = 'agentic-chess:game-session:v1'
+const promptOverridesKey = 'agentic-chess:prompt-overrides:v1'
+const promptTextSizeKey = 'agentic-chess:prompt-text-size:v1'
 
 function sideName(side: Color) {
   return side === 'w' ? 'White' : 'Black'
@@ -88,6 +115,63 @@ function getSessionStorage() {
     return window.sessionStorage
   } catch {
     return null
+  }
+}
+
+function getLocalStorage() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function loadPromptOverrides(): Partial<Record<PromptClassId, string>> {
+  const storage = getLocalStorage()
+  const saved = storage?.getItem(promptOverridesKey)
+  if (!saved) return {}
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<Record<PromptClassId, string>>
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [PromptClassId, string] => {
+        return ['p', 'n', 'b', 'r', 'q'].includes(entry[0]) && typeof entry[1] === 'string'
+      }),
+    ) as Partial<Record<PromptClassId, string>>
+  } catch {
+    storage?.removeItem(promptOverridesKey)
+    return {}
+  }
+}
+
+function clampPromptTextSize(value: number) {
+  return Math.min(18, Math.max(12, value))
+}
+
+function loadPromptTextSizes(): PromptTextSizes {
+  const storage = getLocalStorage()
+  const saved = storage?.getItem(promptTextSizeKey)
+  if (!saved) return {}
+
+  try {
+    const parsed = JSON.parse(saved) as unknown
+    if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+      return Object.fromEntries(promptClassDefinitions.map((agent) => [agent.id, clampPromptTextSize(parsed)])) as PromptTextSizes
+    }
+    if (!parsed || typeof parsed !== 'object') return {}
+
+    const entries = Object.entries(parsed as Record<string, unknown>)
+      .filter((entry): entry is [PromptClassId, number] => {
+        return ['p', 'n', 'b', 'r', 'q'].includes(entry[0]) && typeof entry[1] === 'number' && Number.isFinite(entry[1])
+      })
+      .map(([key, value]) => [key, clampPromptTextSize(value)])
+
+    return Object.fromEntries(entries) as PromptTextSizes
+  } catch {
+    storage?.removeItem(promptTextSizeKey)
+    return {}
   }
 }
 
@@ -164,6 +248,426 @@ const pieceClassRoomLabels: Record<Exclude<PieceSymbol, 'k'>, string> = {
   q: 'Queen',
   r: 'Rooks',
 }
+const centralSquares = new Set(['c4', 'd4', 'e4', 'f4', 'c5', 'd5', 'e5', 'f5'])
+
+const promptClassDefinitions: PromptClassDefinition[] = [
+  {
+    defaultPrompt: pawnPrompt,
+    icon: '♙',
+    id: 'p',
+    name: 'Pawns',
+    role: 'Frontline scout',
+  },
+  {
+    defaultPrompt: knightPrompt,
+    icon: '♘',
+    id: 'n',
+    name: 'Knights',
+    role: 'Skirmisher',
+  },
+  {
+    defaultPrompt: bishopPrompt,
+    icon: '♗',
+    id: 'b',
+    name: 'Bishops',
+    role: 'Diagonal analyst',
+  },
+  {
+    defaultPrompt: rookPrompt,
+    icon: '♖',
+    id: 'r',
+    name: 'Rooks',
+    role: 'File commander',
+  },
+  {
+    defaultPrompt: queenPrompt,
+    icon: '♕',
+    id: 'q',
+    name: 'Queen',
+    role: 'Field marshal',
+  },
+]
+
+function cleanSan(san: string) {
+  return san.replace(/[+#?!]/g, '')
+}
+
+function findLegalSan(legalMoves: Move[], san: string) {
+  const target = cleanSan(san)
+  return legalMoves.find((move) => move.san === san || cleanSan(move.san) === target)
+}
+
+function pieceName(piece: PieceSymbol) {
+  const names: Record<PieceSymbol, string> = {
+    b: 'bishop',
+    k: 'king',
+    n: 'knight',
+    p: 'pawn',
+    q: 'queen',
+    r: 'rook',
+  }
+  return names[piece]
+}
+
+function materialBalanceFor(game: Chess, side: Color) {
+  let white = 0
+  let black = 0
+
+  for (const row of game.board()) {
+    for (const piece of row) {
+      if (!piece) continue
+      if (piece.color === 'w') white += pieceValues[piece.type]
+      if (piece.color === 'b') black += pieceValues[piece.type]
+    }
+  }
+
+  return side === 'w' ? white - black : black - white
+}
+
+function countNonKingPieces(game: Chess) {
+  let count = 0
+  for (const row of game.board()) {
+    for (const piece of row) {
+      if (piece && piece.type !== 'k') count += 1
+    }
+  }
+  return count
+}
+
+function hasQueens(game: Chess) {
+  for (const row of game.board()) {
+    for (const piece of row) {
+      if (piece?.type === 'q') return true
+    }
+  }
+  return false
+}
+
+function addIfLegal(
+  suggestions: KingDirectiveSuggestion[],
+  legalMoves: Move[],
+  san: string,
+  label: string,
+  text: string,
+  priority: number,
+) {
+  if (!findLegalSan(legalMoves, san)) return
+  suggestions.push({ label, priority, text })
+}
+
+function buildOpeningSuggestions(game: Chess, legalMoves: Move[], suggestions: KingDirectiveSuggestion[]) {
+  const history = game.history()
+  const halfMoves = history.length
+  const side = game.turn()
+  const lastMove = history[history.length - 1] ?? ''
+  const openingText = (move: string, plan: string) => `Team, steer into ${move}. ${plan} Move when ready.`
+
+  if (halfMoves === 0 && side === 'w') {
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'e4',
+      'e4 mainline',
+      openingText('1.e4', 'Build a top-tier king-pawn game: Nf3, Bc4 or Bb5, castle short, then fight for d4.'),
+      82,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'd4',
+      'd4 control',
+      openingText("1.d4", "Aim for Queen's Gambit chess: c4, Nf3, clean development, and a durable center."),
+      78,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nf3',
+      'Nf3 flex',
+      openingText('1.Nf3', 'Keep e4, d4, and c4 options alive while developing fast and preserving king safety.'),
+      72,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'c4',
+      'English',
+      openingText('1.c4', 'Clamp d5, build Nf3/g3/Bg2, and squeeze without early weaknesses.'),
+      68,
+    )
+    return
+  }
+
+  if (halfMoves <= 1 && side === 'b' && lastMove === 'e4') {
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'e5',
+      'classical',
+      openingText('...e5', 'Play principled Open Game chess: develop Nc6/Nf6, contest d4, and castle before tactics open.'),
+      82,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'c5',
+      'Sicilian',
+      openingText('...c5', 'Challenge the center from the flank and play for active queenside counterplay.'),
+      80,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'c6',
+      'Caro-Kann',
+      openingText('...c6', 'Prepare ...d5, keep the structure solid, and make White prove the space advantage.'),
+      73,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'e6',
+      'French',
+      openingText('...e6', 'Build the French center with ...d5 and prepare the ...c5 break.'),
+      70,
+    )
+    return
+  }
+
+  if (halfMoves <= 1 && side === 'b' && lastMove === 'd4') {
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nf6',
+      'Indian setup',
+      openingText('...Nf6', 'Keep Nimzo, Queen’s Indian, King’s Indian, and Gruenfeld-style setups available.'),
+      82,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'd5',
+      'QGD setup',
+      openingText('...d5', "Meet the center directly and be ready for a Queen's Gambit Declined structure."),
+      78,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'e6',
+      'solid dark',
+      openingText('...e6', 'Stay flexible: Queen’s Gambit, Nimzo, or French transpositions are all live.'),
+      70,
+    )
+    return
+  }
+
+  if (halfMoves < 12) {
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nf3',
+      'develop',
+      'Team, develop Nf3 if the square is clean. Hit the center, prepare castling, and avoid early queen adventures.',
+      60,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nf6',
+      'develop',
+      'Team, develop Nf6. Pressure the center, keep castling close, and make them show their pawn structure.',
+      60,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nc3',
+      'center knight',
+      'Team, bring the knight to c3. Support e4/d5 ideas and build a real center before launching anything.',
+      58,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Nc6',
+      'center knight',
+      'Team, play Nc6. Contest d4/e5 and keep the opening honest.',
+      58,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Bc4',
+      'Italian',
+      'Team, use Bc4 for Italian pressure. Aim at f7, castle short, and keep the center ready to open.',
+      57,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Bb5',
+      'Ruy Lopez',
+      'Team, use Bb5 for Ruy Lopez pressure. Question the c6 knight, castle fast, and build d4 later.',
+      57,
+    )
+    addIfLegal(
+      suggestions,
+      legalMoves,
+      'Bc5',
+      'active bishop',
+      'Team, develop Bc5. Control the center, watch f2, and get the king safe before the board opens.',
+      56,
+    )
+  }
+}
+
+function buildKingDirectiveSuggestions(game: Chess): KingDirectiveSuggestion[] {
+  const legalMoves = game.moves({ verbose: true })
+  if (legalMoves.length === 0) return []
+
+  const suggestions: KingDirectiveSuggestion[] = []
+  const side = sideName(game.turn())
+  const halfMoves = game.history().length
+  const balance = materialBalanceFor(game, game.turn())
+  const isEndgame = countNonKingPieces(game) <= 10 || !hasQueens(game)
+  const add = (label: string, text: string, priority: number) => {
+    if (suggestions.some((suggestion) => suggestion.label === label || suggestion.text === text)) return
+    suggestions.push({ label, priority, text })
+  }
+  const alreadySuggestsSan = (san: string) => {
+    const target = cleanSan(san)
+    return suggestions.some((suggestion) => cleanSan(suggestion.text).includes(target))
+  }
+
+  const mateMove = legalMoves.find((move) => move.san.includes('#'))
+  if (mateMove) {
+    add('mate now', `Team, ${mateMove.san} is mate. Confirm there is no legality issue and finish the game.`, 120)
+  }
+
+  if (game.inCheck()) {
+    add(
+      'solve check',
+      `${side} is in check. Council, solve king safety first: prefer the cleanest legal escape, block, or capture. Move when ready.`,
+      112,
+    )
+  }
+
+  const queenCapture = legalMoves.find((move) => move.captured === 'q')
+  if (queenCapture) {
+    add(
+      'win queen',
+      `Team, ${queenCapture.san} can take the queen. Verify our king stays safe, then take the material.`,
+      105,
+    )
+  }
+
+  const bestCapture = [...legalMoves]
+    .filter((move) => move.captured)
+    .sort((a, b) => pieceValues[b.captured ?? 'p'] - pieceValues[a.captured ?? 'p'])[0]
+  if (bestCapture && pieceValues[bestCapture.captured ?? 'p'] >= 3) {
+    add(
+      'take material',
+      `Team, inspect ${bestCapture.san}. If the tactic holds, take the ${pieceName(bestCapture.captured ?? 'p')} and simplify the position.`,
+      92,
+    )
+  }
+
+  const checkingMove = legalMoves.find((move) => move.san.includes('+'))
+  if (checkingMove) {
+    add(
+      'force check',
+      `Team, consider ${checkingMove.san}. Use the check only if it wins tempo, material, or forces their king into a worse square.`,
+      88,
+    )
+  }
+
+  addIfLegal(
+    suggestions,
+    legalMoves,
+    'O-O',
+    'castle short',
+    'Team, castle short now if the center is about to open. King safety first, then connect the rooks.',
+    halfMoves < 14 ? 86 : 72,
+  )
+  addIfLegal(
+    suggestions,
+    legalMoves,
+    'O-O-O',
+    'castle long',
+    'Team, castle long only if we want a sharper game. Check pawn cover and queenside safety before committing.',
+    halfMoves < 14 ? 78 : 68,
+  )
+
+  buildOpeningSuggestions(game, legalMoves, suggestions)
+
+  const centerBreak = legalMoves.find((move) => {
+    const piece = game.get(move.from)
+    return piece?.type === 'p' && centralSquares.has(move.to)
+  })
+  if (centerBreak) {
+    if (!alreadySuggestsSan(centerBreak.san)) {
+      add(
+        'center break',
+        `Team, test ${centerBreak.san}. If the center break is sound, open lines for our developed pieces.`,
+        halfMoves < 16 ? 74 : 66,
+      )
+    }
+  }
+
+  const developingMove = legalMoves.find((move) => {
+    const piece = game.get(move.from)
+    return piece && ['n', 'b'].includes(piece.type) && !move.captured && centralSquares.has(move.to)
+  })
+  if (developingMove && halfMoves < 18) {
+    if (!alreadySuggestsSan(developingMove.san)) {
+      add(
+        'develop piece',
+        `Team, develop with ${developingMove.san}. Improve a minor piece, support the center, and keep castling available.`,
+        64,
+      )
+    }
+  }
+
+  if (balance >= 3) {
+    add(
+      'convert edge',
+      'Team, we are ahead. Favor clean trades, king safety, and moves that remove counterplay over flashy attacks.',
+      58,
+    )
+  } else if (balance <= -3) {
+    add(
+      'create chaos',
+      'Team, we need activity. Look for checks, captures, pawn breaks, and threats that make their advantage hard to convert.',
+      58,
+    )
+  }
+
+  if (isEndgame) {
+    const kingMove = legalMoves.find((move) => {
+      const piece = game.get(move.from)
+      return piece?.type === 'k' && !move.san.includes('O-O')
+    })
+    if (kingMove) {
+      add(
+        'king active',
+        `Team, endgame rules apply. Consider ${kingMove.san} if it activates the king without walking into tactics.`,
+        62,
+      )
+    }
+  }
+
+  add(
+    'best move',
+    'Team, no agenda. Find the strongest legal move by checks, captures, threats, king safety, then long-term structure.',
+    40,
+  )
+
+  return suggestions
+    .sort((a, b) => b.priority - a.priority)
+    .filter((suggestion, index, list) => list.findIndex((item) => item.label === suggestion.label) === index)
+    .slice(0, 5)
+}
 
 function buildCouncilOpeningEvents(game: Chess, command: string, id: number): CouncilRoomEvent[] {
   const pieceClasses = new Set<string>()
@@ -230,7 +734,7 @@ function marketTraceEvent(event: PieceCouncilTraceEvent): PieceCouncilTraceEvent
   }
 
   if (actor.includes('strategy director')) {
-    return { ...event, actor: 'Strategy director', content: event.content.replace(/^Gemini ranked the plan:\s*/i, 'Gemini calls: ') }
+    return { ...event, actor: 'Strategy director', content: event.content.replace(/^.* ranked the plan:\s*/i, 'Council calls: ') }
   }
 
   if (actor.includes('router')) {
@@ -370,6 +874,101 @@ function CouncilRoom({
   )
 }
 
+function AgentPromptRail({
+  activeId,
+  promptOverrides,
+  onSelect,
+}: {
+  activeId: PromptClassId | null
+  promptOverrides: Partial<Record<PromptClassId, string>>
+  onSelect: (id: PromptClassId) => void
+}) {
+  return (
+    <aside className="agent-prompt-rail" aria-label="Agent class prompts">
+      {promptClassDefinitions.map((agent) => {
+        const edited = Boolean(promptOverrides[agent.id])
+        return (
+          <button
+            type="button"
+            className={`agent-prompt-button ${activeId === agent.id ? 'active' : ''}`}
+            key={agent.id}
+            onClick={() => onSelect(agent.id)}
+            title={`${agent.name} master prompt`}
+          >
+            <span className="agent-prompt-icon">{agent.icon}</span>
+            <span className="agent-prompt-copy">
+              <strong>{agent.name}</strong>
+              <span>{agent.role}</span>
+            </span>
+            {edited && <span className="agent-model-pill edited">Tuned</span>}
+          </button>
+        )
+      })}
+    </aside>
+  )
+}
+
+function PromptEditorModal({
+  agent,
+  prompt,
+  textSize,
+  onChange,
+  onClose,
+  onReset,
+  onTextSizeChange,
+}: {
+  agent: PromptClassDefinition
+  prompt: string
+  textSize: number
+  onChange: (value: string) => void
+  onClose: () => void
+  onReset: () => void
+  onTextSizeChange: (value: number) => void
+}) {
+  return (
+    <div className="prompt-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="prompt-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${agent.name} master prompt`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="prompt-modal-header">
+          <span className="prompt-modal-icon">{agent.icon}</span>
+          <div>
+            <p className="eyebrow">{agent.role}</p>
+            <h2>{agent.name}</h2>
+          </div>
+          <button type="button" className="prompt-modal-close" onClick={onClose} aria-label="Close prompt editor">
+            <X size={15} />
+          </button>
+        </header>
+
+        <div className="prompt-toolbar" aria-label="Prompt text settings">
+          <button type="button" onClick={() => onTextSizeChange(textSize - 1)} aria-label="Decrease prompt text size">
+            A-
+          </button>
+          <span>{textSize}px</span>
+          <button type="button" onClick={() => onTextSizeChange(textSize + 1)} aria-label="Increase prompt text size">
+            A+
+          </button>
+          <button type="button" onClick={onReset}>
+            Reset
+          </button>
+        </div>
+
+        <textarea
+          className="prompt-editor"
+          value={prompt}
+          onChange={(event) => onChange(event.target.value)}
+          style={{ fontSize: `${textSize}px` }}
+        />
+      </section>
+    </div>
+  )
+}
+
 function CapturedRow({ side, pieces }: { side: Color; pieces: PieceSymbol[] }) {
   const score = pieces.reduce((sum, p) => sum + pieceValues[p], 0)
   return (
@@ -402,6 +1001,9 @@ function LocalGame() {
   const [activeStrategy, setActiveStrategy] = useState('')
   const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [pendingCouncilQuestion, setPendingCouncilQuestion] = useState('')
+  const [promptOverrides, setPromptOverrides] = useState<Partial<Record<PromptClassId, string>>>(() => loadPromptOverrides())
+  const [activePromptClass, setActivePromptClass] = useState<PromptClassId | null>(null)
+  const [promptTextSizes, setPromptTextSizes] = useState<PromptTextSizes>(() => loadPromptTextSizes())
   const activeStrategyRef = useRef('')
   const autopilotEnabledRef = useRef(false)
   const councilRunIdRef = useRef(0)
@@ -430,6 +1032,12 @@ function LocalGame() {
   }, [moveHistory])
 
   const isViewingArchive = selectedThreadId !== 'current'
+  const activePromptDefinition = promptClassDefinitions.find((agent) => agent.id === activePromptClass) ?? null
+  const activePromptText = activePromptDefinition
+    ? (promptOverrides[activePromptDefinition.id] ?? activePromptDefinition.defaultPrompt)
+    : ''
+  const activePromptTextSize = activePromptDefinition ? (promptTextSizes[activePromptDefinition.id] ?? 13) : 13
+  const directiveSuggestions = useMemo(() => buildKingDirectiveSuggestions(game), [game])
 
   useEffect(() => {
     activeStrategyRef.current = activeStrategy
@@ -449,6 +1057,20 @@ function LocalGame() {
     }
     storage.setItem(gameSessionKey, JSON.stringify(session))
   }, [game, lastMove])
+
+  useEffect(() => {
+    const storage = getLocalStorage()
+    if (!storage) return
+
+    storage.setItem(promptOverridesKey, JSON.stringify(promptOverrides))
+  }, [promptOverrides])
+
+  useEffect(() => {
+    const storage = getLocalStorage()
+    if (!storage) return
+
+    storage.setItem(promptTextSizeKey, JSON.stringify(promptTextSizes))
+  }, [promptTextSizes])
 
   const commitMove = useCallback(
     (from: Square, to: Square, promotion: PieceSymbol = 'q') => {
@@ -571,10 +1193,10 @@ function LocalGame() {
       setCouncilThinking(true)
 
       try {
-        const result = await requestPieceCouncil(game, trimmed, 3)
+        const result = await requestPieceCouncil(game, trimmed, 3, promptOverrides)
         if (!isCurrentRun()) return
 
-        const sourceLabel = result.source === 'gemini' ? 'Gemini counsel' : 'local counsel'
+        const sourceLabel = result.source === 'gemini' ? 'Council' : 'local counsel'
         const traceEvents = traceToCouncilEvents(result.trace, id + 100)
 
         if (result.terminal) {
@@ -720,11 +1342,11 @@ function LocalGame() {
         }
       }
     },
-    [commitMove, game, isViewingArchive],
+    [commitMove, game, isViewingArchive, promptOverrides],
   )
 
-  const sendMessage = useCallback(async () => {
-    const trimmed = draft.trim()
+  const submitDirective = useCallback(async (directive: string) => {
+    const trimmed = directive.trim()
     if (!trimmed || isViewingArchive) return
 
     setDraft('')
@@ -734,7 +1356,11 @@ function LocalGame() {
     activeStrategyRef.current = trimmed
     autopilotEnabledRef.current = true
     await runCouncilTurn(trimmed, 'auto')
-  }, [draft, isViewingArchive, runCouncilTurn])
+  }, [isViewingArchive, runCouncilTurn])
+
+  const sendMessage = useCallback(async () => {
+    await submitDirective(draft)
+  }, [draft, submitDirective])
 
   useEffect(() => {
     if (!autopilotEnabled || !activeStrategy.trim() || isCouncilThinking || isViewingArchive) return
@@ -764,7 +1390,25 @@ function LocalGame() {
   return (
     <main className="app-shell">
       <div className="workspace-layout">
+        <AgentPromptRail activeId={activePromptClass} promptOverrides={promptOverrides} onSelect={setActivePromptClass} />
         <CouncilRoom events={councilRoomEvents} isThinking={isCouncilThinking}>
+          <div className="directive-suggestions" aria-label="Suggested royal directives">
+            {directiveSuggestions.map((suggestion) => (
+              <button
+                type="button"
+                className="directive-chip"
+                key={suggestion.label}
+                onClick={() => {
+                  void submitDirective(suggestion.text)
+                }}
+                title={suggestion.text}
+                disabled={isViewingArchive}
+              >
+                <span>{suggestion.label}</span>
+                <strong>{suggestion.text}</strong>
+              </button>
+            ))}
+          </div>
           <div className={`composer council-composer ${isCouncilThinking ? 'thinking' : ''}`}>
             <select
               className="composer-history"
@@ -860,6 +1504,33 @@ function LocalGame() {
           </footer>
         </section>
       </div>
+      {activePromptDefinition && (
+        <PromptEditorModal
+          agent={activePromptDefinition}
+          prompt={activePromptText}
+          textSize={activePromptTextSize}
+          onChange={(value) => {
+            setPromptOverrides((current) => ({
+              ...current,
+              [activePromptDefinition.id]: value,
+            }))
+          }}
+          onClose={() => setActivePromptClass(null)}
+          onReset={() => {
+            setPromptOverrides((current) => {
+              const next = { ...current }
+              delete next[activePromptDefinition.id]
+              return next
+            })
+          }}
+          onTextSizeChange={(value) => {
+            setPromptTextSizes((current) => ({
+              ...current,
+              [activePromptDefinition.id]: clampPromptTextSize(value),
+            }))
+          }}
+        />
+      )}
     </main>
   )
 }

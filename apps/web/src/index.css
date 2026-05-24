@@ -48,7 +48,7 @@ button {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-columns: minmax(148px, 172px) minmax(0, 1fr) minmax(240px, 300px);
   gap: 0;
   align-items: stretch;
   width: min(1500px, calc(100vw - 24px));
@@ -57,9 +57,122 @@ button {
   min-height: 0;
 }
 
+.agent-prompt-rail {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 54px 12px 14px 0;
+  background:
+    linear-gradient(90deg, rgba(6, 9, 14, 0.7), rgba(1, 2, 3, 0)),
+    transparent;
+}
+
+.agent-prompt-button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 46px;
+  padding: 5px 8px 5px 5px;
+  border-left: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #dce7f2;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.agent-prompt-button:hover,
+.agent-prompt-button.active {
+  border-left-color: rgba(102, 227, 255, 0.72);
+  background: rgba(139, 185, 253, 0.065);
+}
+
+.agent-prompt-button.active {
+  box-shadow: inset 0 0 0 1px rgba(102, 227, 255, 0.08);
+}
+
+.agent-prompt-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(143, 185, 197, 0.18);
+  border-radius: 10px;
+  background: rgba(13, 20, 30, 0.86);
+  color: #eef4fb;
+  font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
+  font-size: 1.1rem;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.agent-prompt-button.active .agent-prompt-icon,
+.agent-prompt-button:hover .agent-prompt-icon {
+  border-color: rgba(102, 227, 255, 0.34);
+  background: rgba(18, 31, 44, 0.94);
+  color: #8be9fd;
+}
+
+.agent-prompt-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-prompt-copy strong,
+.agent-prompt-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-prompt-copy strong {
+  color: #eef4fb;
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.agent-prompt-copy span {
+  margin-top: 2px;
+  color: #8aa2b5;
+  font-size: 0.61rem;
+  line-height: 1.1;
+}
+
+.agent-model-pill {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  max-width: 42px;
+  overflow: hidden;
+  color: #708194;
+  font-size: 0.5rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.agent-model-pill.edited {
+  color: #f4d47a;
+}
+
 .board-workspace {
   display: grid;
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 1;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 6px;
@@ -74,7 +187,7 @@ button {
 .council-room {
   position: relative;
   display: grid;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
@@ -1078,6 +1191,72 @@ h2 {
   background: rgba(244, 212, 122, 0.12);
 }
 
+.directive-suggestions {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 7px 10px 0;
+  scrollbar-width: none;
+}
+
+.directive-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.directive-chip {
+  display: grid;
+  flex: 0 0 min(210px, 76%);
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(244, 212, 122, 0.16);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(244, 212, 122, 0.105), rgba(139, 185, 253, 0.055)),
+    rgba(10, 14, 20, 0.82);
+  color: #dce7f2;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.directive-chip:hover {
+  border-color: rgba(244, 212, 122, 0.42);
+  background:
+    linear-gradient(135deg, rgba(244, 212, 122, 0.15), rgba(139, 185, 253, 0.075)),
+    rgba(14, 19, 27, 0.92);
+  transform: translateY(-1px);
+}
+
+.directive-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.directive-chip span {
+  color: #f4d47a;
+  font-size: 0.64rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.directive-chip strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #dce7f2;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .council-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1407,6 +1586,177 @@ h2 {
   background: #ffffff;
 }
 
+.prompt-modal-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.64);
+  backdrop-filter: blur(12px);
+}
+
+.prompt-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  width: min(760px, 100%);
+  height: min(760px, calc(100vh - 40px));
+  min-height: 0;
+  padding: 16px;
+  border: 1px solid rgba(143, 185, 197, 0.16);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(102, 227, 255, 0.075), transparent 32%),
+    linear-gradient(180deg, rgba(14, 20, 29, 0.98), rgba(5, 8, 13, 0.98));
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.64),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.prompt-modal-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.prompt-modal-header .eyebrow {
+  margin-bottom: 4px;
+}
+
+.prompt-modal-header h2 {
+  overflow: hidden;
+  color: #eef4fb;
+  font-size: 1.18rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-modal-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(102, 227, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(13, 21, 31, 0.9);
+  color: #8be9fd;
+  font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.prompt-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-model-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(244, 212, 122, 0.18);
+  border-radius: 999px;
+  background: rgba(244, 212, 122, 0.075);
+  color: #f4d47a;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.prompt-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(143, 185, 197, 0.1);
+  color: #cbd6e2;
+  cursor: pointer;
+}
+
+.prompt-modal-close:hover {
+  background: rgba(143, 185, 197, 0.16);
+}
+
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.prompt-toolbar button,
+.prompt-toolbar span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.prompt-toolbar button {
+  min-width: 38px;
+  padding: 0 10px;
+  background: rgba(143, 185, 197, 0.1);
+  color: #dce7f2;
+  cursor: pointer;
+}
+
+.prompt-toolbar button:hover {
+  background: rgba(143, 185, 197, 0.16);
+}
+
+.prompt-toolbar span {
+  min-width: 48px;
+  color: #8aa2b5;
+}
+
+.prompt-toolbar button:last-child {
+  margin-left: auto;
+  background: rgba(244, 212, 122, 0.08);
+  color: #f4d47a;
+}
+
+.prompt-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  outline: none;
+  padding: 14px;
+  background: rgba(1, 2, 3, 0.48);
+  color: #dce7f2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+
+.prompt-editor:focus {
+  border-color: rgba(102, 227, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(102, 227, 255, 0.075);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1430,6 +1780,25 @@ h2 {
     width: 100%;
     height: auto;
     min-height: 100vh;
+  }
+
+  .agent-prompt-rail {
+    grid-column: 1;
+    grid-row: auto;
+    flex-direction: row;
+    gap: 8px;
+    overflow: auto hidden;
+    padding: 0;
+    background: transparent;
+    scrollbar-width: none;
+  }
+
+  .agent-prompt-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .agent-prompt-button {
+    flex: 0 0 154px;
   }
 
   .council-room {
@@ -1554,5 +1923,28 @@ h2 {
     width: 38px;
     height: 38px;
     min-height: 38px;
+  }
+
+  .prompt-modal {
+    height: min(700px, calc(100vh - 28px));
+    padding: 12px;
+  }
+
+  .prompt-modal-header {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .prompt-modal-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .agent-model-label {
+    justify-self: start;
+  }
+
+  .prompt-modal-actions {
+    grid-column: 1 / -1;
+    justify-content: space-between;
   }
 }

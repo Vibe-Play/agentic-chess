@@ -21,6 +21,7 @@ export async function requestPieceCouncil(
   game: Chess,
   command: string,
   maxReplies = 3,
+  promptOverrides: Partial<Record<string, string>> = {},
 ): Promise<PieceCouncilResult> {
   const fallback = orchestratePieceCouncil(game, command, maxReplies)
 
@@ -30,6 +31,7 @@ export async function requestPieceCouncil(
         command,
         fen: game.fen(),
         maxReplies,
+        promptOverrides,
       }),
       headers: {
         'Content-Type': 'application/json',
