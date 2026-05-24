@@ -229,6 +229,10 @@ function marketTraceEvent(event: PieceCouncilTraceEvent): PieceCouncilTraceEvent
     }
   }
 
+  if (actor.includes('strategy director')) {
+    return { ...event, actor: 'Strategy director', content: event.content.replace(/^Gemini ranked the plan:\s*/i, 'Gemini calls: ') }
+  }
+
   if (actor.includes('router')) {
     return { ...event, actor: 'Oracle table', content: 'Polishing the strongest class takes for the board.' }
   }
@@ -274,6 +278,7 @@ function replyToCouncilEvent(reply: { content: string; move: { san: string }; se
 function councilActorIcon(actor: string, tone?: CouncilRoomEvent['tone']) {
   const normalized = actor.toLowerCase()
   if (tone === 'king' || normalized.includes('king')) return '♔'
+  if (normalized.includes('castle') || normalized.includes('royal')) return '♔'
   if (normalized.includes('pawn')) return '♙'
   if (normalized.includes('knight')) return '♘'
   if (normalized.includes('bishop')) return '♗'
@@ -288,6 +293,8 @@ function councilActorClass(actor: string, tone?: CouncilRoomEvent['tone']) {
   const normalized = actor.toLowerCase()
   if (tone === 'king' || normalized.includes('king')) return 'king'
   if (
+    normalized.includes('castle') ||
+    normalized.includes('royal') ||
     normalized.includes('pawn') ||
     normalized.includes('knight') ||
     normalized.includes('bishop') ||

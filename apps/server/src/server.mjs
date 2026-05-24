@@ -3,7 +3,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Chess } from 'chess.js'
-import { buildPieceCouncilContext, piecePersonas } from '@agentic-chess/chess-council'
+import {
+  buildManagedPieceCouncilContext,
+  buildPieceCouncilContext,
+  piecePersonas,
+} from '@agentic-chess/chess-council'
 
 const serverDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(serverDir, '../../..')
@@ -120,7 +124,7 @@ function buildTraceEvent(actor, content, status = 'done') {
 }
 
 function summarizeCandidateClasses(replies) {
-  if (replies.length === 0) return 'No non-king piece classes have legal candidates.'
+  if (replies.length === 0) return 'No legal council candidates.'
   return replies.map((reply) => `${reply.sender} ${reply.move.san}`).join(', ')
 }
 
@@ -179,6 +183,115 @@ function mergeGeminiReplies(rawReplies, legalReplies) {
     .filter(Boolean)
 }
 
+function buildLegalMoveRoster(game) {
+  return game.moves({ verbose: true }).map((move) => {
+    const piece = game.get(move.from)
+    const persona = piece ? piecePersonas[piece.type] : null
+
+    return {
+      captures: move.captured ?? null,
+      className: persona?.name ?? 'Unknown',
+      from: move.from,
+      givesCheck: move.san.includes('+') || move.san.includes('#'),
+      piece: piece?.type ?? null,
+      promotion: move.promotion ?? null,
+      san: move.san,
+      to: move.to,
+    }
+  })
+}
+
+function normalizeManagedSelections(rawSelections) {
+  if (!Array.isArray(rawSelections)) return []
+
+  return rawSelections
+    .map((raw) => ({
+      content: safeText(raw?.content ?? raw?.reason, 320),
+      from: safeText(raw?.from, 2),
+      relevance: Number(raw?.score ?? raw?.relevance ?? 0),
+      san: safeText(raw?.san ?? raw?.move?.san, 16),
+      sender: safeText(raw?.sender, 64),
+      subtitle: safeText(raw?.subtitle, 96),
+      to: safeText(raw?.to ?? raw?.move?.to, 2),
+    }))
+    .filter((selection) => selection.from || selection.to || selection.san)
+}
+
+async function askGeminiDirector(game, command, maxReplies) {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return null
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  const replyLimit = Math.min(3, Math.max(1, Number(maxReplies) || 3))
+
+  const systemInstruction = [
+    'You are the Agentic Chess strategy director.',
+    'The user is the king. Convert the king command into the strongest legal move shortlist.',
+    'Choose only moves from the provided legalMoves roster. Never invent SAN, source squares, or destinations.',
+    'Honor direct commands first: if the king asks to castle and a castling move is legal, rank that castling move first.',
+    'Return at most maxReplies moves and keep unique piece classes when possible.',
+    'Return strict JSON: {"moves":[{"from":"e1","to":"g1","san":"O-O","sender":"Castling","subtitle":"Royal guard","content":"Short castle is ready now.","score":100}],"note":"optional"}',
+  ].join(' ')
+
+  try {
+    const geminiResponse = await fetch(endpoint, {
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: JSON.stringify(
+                  {
+                    fen: game.fen(),
+                    kingCommand: command,
+                    legalMoves: buildLegalMoveRoster(game),
+                    maxReplies: replyLimit,
+                    sideToMove: game.turn() === 'w' ? 'White' : 'Black',
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.18,
+        },
+        system_instruction: {
+          parts: [{ text: systemInstruction }],
+        },
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      method: 'POST',
+      signal: controller.signal,
+    })
+
+    if (!geminiResponse.ok) {
+      const errorBody = await geminiResponse.text()
+      throw new Error(`Gemini director ${geminiResponse.status}: ${errorBody.slice(0, 240)}`)
+    }
+
+    const data = await geminiResponse.json()
+    const parsed = parseJsonObject(extractTextFromGemini(data))
+    const rawMoves = Array.isArray(parsed?.moves) ? parsed.moves : parsed?.priorities
+
+    return {
+      note: safeText(parsed?.note, 240),
+      selections: normalizeManagedSelections(rawMoves),
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function askGemini(context) {
   if (context.replies.length === 0) {
     return {
@@ -204,6 +317,7 @@ async function askGemini(context) {
     'You write compact Agentic Chess board bubbles that appear over the responding pieces.',
     'The user is the king and gives strategic commands. Never speak as the king.',
     'Reply only as the provided legal candidate pieces.',
+    'Keep the candidate order exactly; the first reply is the move autopilot will make.',
     'Do not invent moves, squares, captures, checks, or tactics outside the candidate list.',
     'Each piece should sound like its archetype and answer in one compact board-bubble sentence.',
     'Return strict JSON with shape {"replies":[{"from":"e2","san":"e4","sender":"Pawn e2","subtitle":"Frontline scout","content":"..."}]}.',
@@ -294,7 +408,38 @@ async function handlePieceCouncil(request, response) {
     return
   }
 
-  const context = buildPieceCouncilContext(game, command, normalizeMaxReplies(body.maxReplies))
+  const replyLimit = normalizeMaxReplies(body.maxReplies)
+  let context = buildPieceCouncilContext(game, command, replyLimit)
+
+  if (!context.terminal && process.env.GEMINI_API_KEY) {
+    try {
+      const director = await askGeminiDirector(game, command, replyLimit)
+      if (director?.selections?.length) {
+        const managedContext = buildManagedPieceCouncilContext(game, command, director.selections, replyLimit)
+        if (managedContext.replies.length > 0) {
+          context = managedContext
+          trace.push(
+            buildTraceEvent(
+              'Strategy director',
+              `Gemini ranked the plan: ${summarizeCandidateClasses(context.replies)}.`,
+            ),
+          )
+        } else {
+          trace.push(
+            buildTraceEvent('Strategy director', 'Gemini returned no legal ranked moves; local ranking stayed in control.', 'blocked'),
+          )
+        }
+      } else {
+        trace.push(buildTraceEvent('Strategy director', 'Gemini returned no ranked moves; local ranking stayed in control.', 'blocked'))
+      }
+    } catch (error) {
+      console.error(error)
+      trace.push(
+        buildTraceEvent('Strategy director', 'Gemini strategy director missed the call; local ranking stayed in control.', 'blocked'),
+      )
+    }
+  }
+
   trace.push(
     buildTraceEvent(
       'Move arbiter',

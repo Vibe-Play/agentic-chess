@@ -46,10 +46,13 @@ export type PieceCouncilContext = {
 }
 
 type MoveCandidate = {
+  content?: string
   features: string[]
   move: Move
   piece: PieceSymbol
   relevance: number
+  sender?: string
+  subtitle?: string
 }
 
 export type Persona = {
@@ -60,7 +63,7 @@ export type Persona = {
   voice: string
 }
 
-export const piecePersonas: Record<Exclude<PieceSymbol, 'k'>, Persona> = {
+export const piecePersonas: Record<PieceSymbol, Persona> = {
   p: {
     name: 'Pawn',
     archetype: 'Frontline scout',
@@ -96,6 +99,14 @@ export const piecePersonas: Record<Exclude<PieceSymbol, 'k'>, Persona> = {
     voice: 'decisive, ambitious, slightly imperious',
     masterPrompt: queenPrompt,
   },
+  k: {
+    name: 'Castling',
+    archetype: 'Royal guard',
+    avatar: '♔',
+    voice: 'calm, protective, only speaks for legal king moves and castling lanes',
+    masterPrompt:
+      'You are the royal guard, not the user. You only advise on legal king movement, especially castling and urgent king-safety moves.',
+  },
 }
 
 const pieceNames: Record<PieceSymbol, string> = {
@@ -122,10 +133,54 @@ function includesAny(command: string, words: string[]) {
   return words.some((word) => command.includes(word))
 }
 
+function normalizeMoveText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[+#?!]/g, '')
+    .replace(/0/g, 'o')
+    .replace(/\s+/g, '')
+}
+
+function isCastleMove(move: Move) {
+  return normalizeMoveText(move.san).startsWith('o-o')
+}
+
+function hasCastleIntent(command: string) {
+  return includesAny(command, [
+    'castle',
+    'castling',
+    'o-o',
+    '0-0',
+    'king side',
+    'kingside',
+    'queen side',
+    'queenside',
+    'long castle',
+    'short castle',
+  ])
+}
+
+function hasKingMoveIntent(command: string) {
+  return (
+    hasCastleIntent(command) ||
+    includesAny(command, ['move king', 'king move', 'king to', 'with king', 'king escape', 'king run'])
+  )
+}
+
 function requestedPieceBonus(command: string, piece: PieceSymbol) {
   const name = pieceNames[piece]
   if (!command.includes(name)) return 0
   return 24
+}
+
+function requestedSanBonus(command: string, move: Move) {
+  const normalizedCommand = normalizeMoveText(command)
+  const normalizedSan = normalizeMoveText(move.san)
+
+  if (normalizedCommand.includes(normalizedSan)) return 40
+  if (normalizedCommand.includes(`${move.from}${move.to}`)) return 34
+  if (command.includes(`${move.from}-${move.to}`) || command.includes(`${move.from} to ${move.to}`)) return 34
+  return 0
 }
 
 function requestedDestinationBonus(command: string, move: Move) {
@@ -151,9 +206,16 @@ function normalizeReplyLimit(maxReplies: number) {
   return Math.min(3, Math.max(1, Math.round(maxReplies)))
 }
 
-function scoreMove(game: Chess, command: string, move: Move): MoveCandidate | null {
+function scoreMove(game: Chess, command: string, move: Move, options: { allowKing?: boolean } = {}): MoveCandidate | null {
   const boardPiece = game.get(move.from)
-  if (!boardPiece || boardPiece.type === 'k') return null
+  if (!boardPiece) return null
+
+  const castleIntent = hasCastleIntent(command)
+  const kingMoveIntent = hasKingMoveIntent(command)
+  const castleMove = isCastleMove(move)
+
+  if (boardPiece.type === 'k' && !options.allowKing && !kingMoveIntent) return null
+  if (boardPiece.type === 'k' && castleIntent && !castleMove) return null
 
   let relevance = 10
   const features: string[] = []
@@ -162,8 +224,20 @@ function scoreMove(game: Chess, command: string, move: Move): MoveCandidate | nu
   const forward = forwardDelta(move.color, move)
 
   relevance += requestedPieceBonus(command, piece)
+  relevance += requestedSanBonus(command, move)
   relevance += requestedDestinationBonus(command, move)
   relevance += sideBonus(command, move)
+
+  if (piece === 'k') {
+    relevance += castleMove ? 92 : 30
+    features.push(castleMove ? 'gets the king castled' : 'answers with a direct king move')
+
+    if (castleMove && castleIntent) {
+      relevance += 64
+      if (move.to[0] === 'g') features.push('locks in the short castle')
+      if (move.to[0] === 'c') features.push('locks in the long castle')
+    }
+  }
 
   if (move.captured) {
     relevance += 11
@@ -263,28 +337,31 @@ const pieceClassLabels: Record<Exclude<PieceSymbol, 'k'>, string> = {
   r: 'Rooks',
 }
 
-function pieceLabel(piece: PieceSymbol) {
-  return pieceClassLabels[piece as Exclude<PieceSymbol, 'k'>]
+function pieceLabel(candidate: MoveCandidate) {
+  if (candidate.piece === 'k') return isCastleMove(candidate.move) ? 'Castling' : 'Royal guard'
+  return pieceClassLabels[candidate.piece as Exclude<PieceSymbol, 'k'>]
 }
 
 function buildReply(candidate: MoveCandidate): PieceReply {
-  const persona = piecePersonas[candidate.piece as Exclude<PieceSymbol, 'k'>]
+  const persona = piecePersonas[candidate.piece]
   const featureText = candidate.features.slice(0, 2).join(' and ')
 
   return {
     archetype: persona.archetype,
     avatar: persona.avatar,
-    content: `King, I can play ${candidate.move.san} from ${candidate.move.from} to ${candidate.move.to}. That ${featureText}.`,
+    content:
+      candidate.content ??
+      `King, I can play ${candidate.move.san} from ${candidate.move.from} to ${candidate.move.to}. That ${featureText}.`,
     from: candidate.move.from,
     move: candidate.move,
     piece: candidate.piece,
     relevance: candidate.relevance,
-    sender: pieceLabel(candidate.piece),
-    subtitle: `${persona.archetype} · best ${pieceNames[candidate.piece]} move from ${candidate.move.from}`,
+    sender: candidate.sender ?? pieceLabel(candidate),
+    subtitle: candidate.subtitle ?? `${persona.archetype} · best ${pieceNames[candidate.piece]} move from ${candidate.move.from}`,
   }
 }
 
-export function buildPieceCouncilContext(game: Chess, command: string, maxReplies = 3): PieceCouncilContext {
+function getTerminalContext(game: Chess, command: string): PieceCouncilContext | null {
   const sideToMove = game.turn() === 'w' ? 'White' : 'Black'
 
   if (game.isCheckmate()) {
@@ -306,6 +383,98 @@ export function buildPieceCouncilContext(game: Chess, command: string, maxReplie
       terminal: 'The current chess.js rules mark this position as drawn.',
     }
   }
+
+  return null
+}
+
+function findLegalMove(game: Chess, selection: ManagedMoveSelection) {
+  const from = typeof selection.from === 'string' ? selection.from : ''
+  const to = typeof selection.to === 'string' ? selection.to : ''
+  const san = typeof selection.san === 'string' ? normalizeMoveText(selection.san) : ''
+
+  return game.moves({ verbose: true }).find((move) => {
+    if (from && move.from !== from) return false
+    if (to && move.to !== to) return false
+    if (san && normalizeMoveText(move.san) !== san) return false
+    return Boolean(from || to || san)
+  })
+}
+
+function finiteRelevance(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export type ManagedMoveSelection = {
+  content?: string
+  from?: string
+  relevance?: number
+  san?: string
+  sender?: string
+  subtitle?: string
+  to?: string
+}
+
+export function buildManagedPieceCouncilContext(
+  game: Chess,
+  command: string,
+  selections: ManagedMoveSelection[],
+  maxReplies = 3,
+): PieceCouncilContext {
+  const terminal = getTerminalContext(game, command)
+  if (terminal) return terminal
+
+  const sideToMove = game.turn() === 'w' ? 'White' : 'Black'
+  const commandLower = command.toLowerCase()
+  const replyLimit = normalizeReplyLimit(maxReplies)
+  const bestByPieceClass = new Map<PieceSymbol, MoveCandidate>()
+
+  selections.forEach((selection, index) => {
+    const move = findLegalMove(game, selection)
+    if (!move) return
+
+    const scored = scoreMove(game, commandLower, move, { allowKing: true })
+    const boardPiece = game.get(move.from)
+    if (!boardPiece) return
+
+    const candidate: MoveCandidate =
+      scored ??
+      ({
+        features: ['is the director-selected legal move'],
+        move,
+        piece: boardPiece.type,
+        relevance: 10,
+      } satisfies MoveCandidate)
+
+    const managedCandidate: MoveCandidate = {
+      ...candidate,
+      content: selection.content?.trim() || candidate.content,
+      relevance: candidate.relevance + 180 - index * 8 + finiteRelevance(selection.relevance),
+      sender: selection.sender?.trim() || candidate.sender,
+      subtitle: selection.subtitle?.trim() || candidate.subtitle,
+    }
+
+    const current = bestByPieceClass.get(managedCandidate.piece)
+    if (!current || managedCandidate.relevance > current.relevance) {
+      bestByPieceClass.set(managedCandidate.piece, managedCandidate)
+    }
+  })
+
+  return {
+    command,
+    fen: game.fen(),
+    replies: [...bestByPieceClass.values()]
+      .sort((a, b) => b.relevance - a.relevance || a.move.san.localeCompare(b.move.san))
+      .slice(0, replyLimit)
+      .map(buildReply),
+    sideToMove,
+  }
+}
+
+export function buildPieceCouncilContext(game: Chess, command: string, maxReplies = 3): PieceCouncilContext {
+  const terminal = getTerminalContext(game, command)
+  if (terminal) return terminal
+  const sideToMove = game.turn() === 'w' ? 'White' : 'Black'
 
   return {
     command,
