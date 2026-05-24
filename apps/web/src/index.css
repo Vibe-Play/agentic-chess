@@ -48,7 +48,7 @@ button {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   gap: 0;
   align-items: stretch;
   width: min(1500px, calc(100vw - 24px));
@@ -59,6 +59,8 @@ button {
 
 .board-workspace {
   display: grid;
+  grid-column: 1;
+  grid-row: 1;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 6px;
   width: 100%;
@@ -66,12 +68,14 @@ button {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .council-room {
   position: relative;
   display: grid;
+  grid-column: 2;
+  grid-row: 1;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
@@ -79,9 +83,9 @@ button {
   border: 0;
   border-radius: 0;
   background:
-    radial-gradient(circle at 18% 12%, rgba(117, 88, 255, 0.08), transparent 34%),
-    radial-gradient(circle at 76% 3%, rgba(102, 227, 255, 0.045), transparent 28%),
-    linear-gradient(90deg, rgba(7, 10, 17, 0.86), rgba(7, 10, 17, 0.58) 58%, rgba(1, 2, 3, 0)),
+    radial-gradient(circle at 82% 12%, rgba(117, 88, 255, 0.08), transparent 34%),
+    radial-gradient(circle at 24% 3%, rgba(102, 227, 255, 0.045), transparent 28%),
+    linear-gradient(270deg, rgba(7, 10, 17, 0.86), rgba(7, 10, 17, 0.58) 58%, rgba(1, 2, 3, 0)),
     linear-gradient(180deg, rgba(8, 12, 20, 0.42), rgba(2, 3, 5, 0.08) 68%, transparent);
   box-shadow: none;
 }
@@ -498,18 +502,20 @@ h2 {
 .piece-reply-bubble {
   position: absolute;
   display: flex;
-  width: clamp(188px, 20vw, 260px);
-  max-width: min(260px, 28vw);
+  width: max-content;
+  min-width: 132px;
+  max-width: min(176px, 22vw);
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 9px;
+  gap: 5px;
+  padding: 7px 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  background: rgba(3, 7, 10, 0.9);
+  border-radius: 12px;
+  background: rgba(3, 7, 10, 0.82);
   color: #edf6ff;
   box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.42),
+    0 12px 26px rgba(0, 0, 0, 0.34),
     inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
   pointer-events: auto;
   text-align: left;
 }
@@ -552,7 +558,7 @@ h2 {
   height: 10px;
   border-right: 1px solid rgba(255, 255, 255, 0.14);
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(3, 7, 10, 0.9);
+  background: rgba(3, 7, 10, 0.82);
   content: "";
 }
 
@@ -596,12 +602,15 @@ h2 {
   align-items: center;
   gap: 5px;
   color: #f4d47a;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   line-height: 1;
 }
 
 .piece-reply-meta strong {
   min-width: max-content;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -609,7 +618,7 @@ h2 {
   flex: 0 0 auto;
   color: #ffffff;
   font-family: "Arial Unicode MS", "Apple Symbols", "Noto Sans Symbols 2", Georgia, serif;
-  font-size: 0.86rem;
+  font-size: 0.78rem;
   line-height: 1;
 }
 
@@ -921,16 +930,17 @@ h2 {
 
 .piece-reply-bubble .suggestion-actions button {
   min-height: 24px;
-  border-radius: 5px;
+  border-radius: 6px;
   font-size: 0.68rem;
 }
 
 .piece-reply-bubble .move-token {
-  min-width: 42px;
+  min-width: 40px;
   padding: 0 7px;
 }
 
 .piece-reply-bubble .approve-move {
+  min-width: 40px;
   padding: 0 8px;
 }
 
@@ -1423,19 +1433,24 @@ h2 {
   }
 
   .council-room {
+    grid-column: 1;
+    grid-row: auto;
     height: 260px;
   }
 
   .board-workspace {
+    grid-column: 1;
+    grid-row: auto;
     width: 100%;
     height: auto;
     min-height: 100vh;
     padding-left: 0;
+    padding-right: 0;
   }
 
   .piece-reply-bubble {
-    width: clamp(160px, 34vw, 220px);
-    max-width: 34vw;
+    min-width: 120px;
+    max-width: 32vw;
   }
 }
 

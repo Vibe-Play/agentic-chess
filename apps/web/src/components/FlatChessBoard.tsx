@@ -166,14 +166,13 @@ export function FlatChessBoard({
                   <article
                     className="piece-reply-bubble"
                     onPointerEnter={() => onPreviewSuggestion(reply.suggestion)}
-                    title={reply.subtitle ?? reply.sender}
+                    title={`${reply.sender}: ${reply.suggestion.san}. ${reply.content}`}
                   >
                     <div className="piece-reply-meta">
                       {reply.avatar && <span className="piece-reply-avatar">{reply.avatar}</span>}
                       <strong>{reply.sender}</strong>
                     </div>
-                    <p className="piece-reply-content">{reply.content}</p>
-                    <div className="suggestion-actions">
+                    <div className="suggestion-actions" aria-label={`${reply.sender} suggests ${reply.suggestion.san}`}>
                       <button
                         type="button"
                         className={`move-token ${isSameSuggestion(previewMove, reply.suggestion) ? 'active' : ''}`}
@@ -181,8 +180,13 @@ export function FlatChessBoard({
                       >
                         {reply.suggestion.san}
                       </button>
-                      <button type="button" className="approve-move" onClick={() => onApproveSuggestion(reply.suggestion)}>
-                        Approve
+                      <button
+                        type="button"
+                        className="approve-move"
+                        onClick={() => onApproveSuggestion(reply.suggestion)}
+                        aria-label={`Approve ${reply.suggestion.san} from ${reply.sender}`}
+                      >
+                        Run
                       </button>
                     </div>
                   </article>
