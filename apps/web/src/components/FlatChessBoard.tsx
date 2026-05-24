@@ -1,11 +1,12 @@
 import { type Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 
 type FlatChessBoardProps = {
+  disabled?: boolean
   game: Chess
-  isProcessing: boolean
   selectedSquare: Square | null
   legalTargets: Square[]
   lastMove: { from: Square; to: Square } | null
+  orientation?: BoardOrientation
   previewMove: PieceMoveSuggestion | null
   replyBubbles: PieceReplyBubble[]
   onApproveSuggestion: (suggestion: PieceMoveSuggestion) => void
@@ -29,6 +30,8 @@ export type PieceReplyBubble = {
   square: Square
   subtitle?: string
 }
+
+type BoardOrientation = 'white' | 'black'
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
@@ -56,17 +59,28 @@ function toSquare(file: (typeof files)[number], rank: (typeof ranks)[number]): S
   return `${file}${rank}` as Square
 }
 
-function squarePosition(square: Square) {
+function squarePosition(square: Square, orientation: BoardOrientation = 'white') {
   const file = square[0] as (typeof files)[number]
   const rank = square[1] as (typeof ranks)[number]
   const fileIndex = Math.max(0, files.indexOf(file))
   const rankIndex = Math.max(0, ranks.indexOf(rank))
+
   return {
     file: files[fileIndex],
-    fileIndex,
+    fileIndex: orientation === 'white' ? fileIndex : 7 - fileIndex,
     rank: ranks[rankIndex],
-    rankIndex,
+    rankIndex: orientation === 'white' ? rankIndex : 7 - rankIndex,
   }
+}
+
+function bubbleDirection(square: Square, replyIndex: number, orientation: BoardOrientation) {
+  const { fileIndex, rankIndex } = squarePosition(square, orientation)
+  const pointsRight = fileIndex <= 1 || (fileIndex < 6 && replyIndex % 2 === 1)
+  const pointsLeft = fileIndex >= 6 || !pointsRight
+
+  if (rankIndex >= 5) return pointsLeft ? 'up-left' : 'up-right'
+  if (rankIndex <= 2) return pointsLeft ? 'down-left' : 'down-right'
+  return fileIndex < 4 ? 'side-right' : 'side-left'
 }
 
 function isSameSuggestion(left: PieceMoveSuggestion | null, right: PieceMoveSuggestion) {
@@ -74,11 +88,12 @@ function isSameSuggestion(left: PieceMoveSuggestion | null, right: PieceMoveSugg
 }
 
 export function FlatChessBoard({
+  disabled = false,
   game,
-  isProcessing,
   selectedSquare,
   legalTargets,
   lastMove,
+  orientation = 'white',
   previewMove,
   replyBubbles,
   onApproveSuggestion,
@@ -86,18 +101,14 @@ export function FlatChessBoard({
   onSquareSelect,
 }: FlatChessBoardProps) {
   const legalSet = new Set(legalTargets)
+  const displayFiles = orientation === 'white' ? files : [...files].reverse()
+  const displayRanks = orientation === 'white' ? ranks : [...ranks].reverse()
 
   return (
     <div className="flat-board-shell" aria-label="2D chessboard">
-      <div className="flat-board">
-        {isProcessing && (
-          <div className="board-processing" role="status" aria-live="polite">
-            <span className="processing-orbit" aria-hidden="true" />
-            <span>Processing council response</span>
-          </div>
-        )}
-        {ranks.map((rank, rankIndex) =>
-          files.map((file, fileIndex) => {
+      <div className={`flat-board ${disabled ? 'disabled' : ''}`}>
+        {displayRanks.map((rank, rankIndex) =>
+          displayFiles.map((file, fileIndex) => {
             const square = toSquare(file, rank)
             const piece = game.get(square)
             const isLight = (rankIndex + fileIndex) % 2 === 0
@@ -123,6 +134,7 @@ export function FlatChessBoard({
                 ].join(' ')}
                 key={square}
                 onClick={() => onSquareSelect(square)}
+                disabled={disabled}
                 aria-label={square}
               >
                 {fileIndex === 0 && <span className="rank-label">{rank}</span>}
@@ -139,11 +151,12 @@ export function FlatChessBoard({
         )}
         {replyBubbles.length > 0 && (
           <div className="piece-reply-layer" aria-live="polite">
-            {replyBubbles.map((reply) => {
-              const position = squarePosition(reply.square)
+            {replyBubbles.map((reply, index) => {
+              const position = squarePosition(reply.square, orientation)
+
               return (
                 <div
-                  className={`piece-reply-anchor file-${position.file} rank-${position.rank}`}
+                  className={`piece-reply-anchor ${bubbleDirection(reply.square, index, orientation)} file-${position.file} rank-${position.rank}`}
                   key={reply.id}
                   style={{
                     left: `${position.fileIndex * 12.5}%`,

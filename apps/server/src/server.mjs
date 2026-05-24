@@ -111,6 +111,19 @@ function buildCandidateRoster(replies) {
   })
 }
 
+function buildTraceEvent(actor, content, status = 'done') {
+  return {
+    actor,
+    content,
+    status,
+  }
+}
+
+function summarizeCandidateClasses(replies) {
+  if (replies.length === 0) return 'No non-king piece classes have legal candidates.'
+  return replies.map((reply) => `${reply.sender} ${reply.move.san}`).join(', ')
+}
+
 function extractTextFromGemini(data) {
   return (
     data?.candidates?.[0]?.content?.parts
@@ -260,6 +273,7 @@ async function askGemini(context) {
 async function handlePieceCouncil(request, response) {
   const body = await readJsonBody(request)
   const command = safeText(body.command, 1_200)
+  const trace = [buildTraceEvent('Ingress', 'Received council request from the board.')]
 
   if (!command) {
     sendJson(response, 400, { error: 'command is required' })
@@ -274,29 +288,59 @@ async function handlePieceCouncil(request, response) {
   let game
   try {
     game = new Chess(body.fen)
+    trace.push(buildTraceEvent('Board parser', `FEN accepted. ${game.turn() === 'w' ? 'White' : 'Black'} is to move.`))
   } catch {
     sendJson(response, 400, { error: 'fen is not a valid chess position' })
     return
   }
 
   const context = buildPieceCouncilContext(game, command, normalizeMaxReplies(body.maxReplies))
+  trace.push(
+    buildTraceEvent(
+      'Move arbiter',
+      `Ranked legal piece classes: ${summarizeCandidateClasses(context.replies)}`,
+      context.replies.length > 0 ? 'done' : 'blocked',
+    ),
+  )
 
   if (context.terminal) {
     sendJson(response, 200, {
       replies: [],
       source: 'fallback',
+      trace: [...trace, buildTraceEvent('Board state', context.terminal, 'blocked')],
       terminal: context.terminal,
     })
     return
   }
 
   try {
-    sendJson(response, 200, await askGemini(context))
+    trace.push(
+      buildTraceEvent(
+        'LLM router',
+        process.env.GEMINI_API_KEY
+          ? `Sending ${context.replies.length} legal class candidates to ${geminiModel}.`
+          : 'Gemini key missing; deterministic local council will answer.',
+        process.env.GEMINI_API_KEY ? 'done' : 'blocked',
+      ),
+    )
+    const result = await askGemini(context)
+    trace.push(
+      buildTraceEvent(
+        result.source === 'gemini' ? 'Gemini counsel' : 'Local counsel',
+        `Returned ${result.replies.length} legal board bubble${result.replies.length === 1 ? '' : 's'}.`,
+      ),
+    )
+    sendJson(response, 200, { ...result, trace })
   } catch (error) {
     console.error(error)
     sendJson(response, 200, {
       replies: context.replies,
       source: 'fallback',
+      trace: [
+        ...trace,
+        buildTraceEvent('Gemini counsel', 'Model request failed; falling back to deterministic legal candidates.', 'blocked'),
+        buildTraceEvent('Local counsel', `Returned ${context.replies.length} legal board bubbles.`),
+      ],
       warning: 'Gemini request failed; using deterministic legal-move council.',
     })
   }

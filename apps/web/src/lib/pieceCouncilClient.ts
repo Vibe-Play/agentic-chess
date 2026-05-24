@@ -5,7 +5,14 @@ export type PieceCouncilResult = {
   replies: PieceReply[]
   source: 'fallback' | 'gemini'
   terminal?: string
+  trace?: PieceCouncilTraceEvent[]
   warning?: string
+}
+
+export type PieceCouncilTraceEvent = {
+  actor: string
+  content: string
+  status?: 'blocked' | 'done' | 'pending'
 }
 
 export async function requestPieceCouncil(
@@ -32,16 +39,31 @@ export async function requestPieceCouncil(
       return {
         replies: fallback,
         source: 'fallback',
+        trace: [
+          {
+            actor: 'Council server',
+            content: `Request failed with HTTP ${response.status}; local legal candidates were used.`,
+            status: 'blocked',
+          },
+        ],
         warning: `Council server returned ${response.status}.`,
       }
     }
 
     const data = (await response.json()) as PieceCouncilResult
-    if (data.terminal) return { replies: [], source: data.source ?? 'fallback', terminal: data.terminal }
+    if (data.terminal) {
+      return {
+        replies: [],
+        source: data.source ?? 'fallback',
+        terminal: data.terminal,
+        trace: data.trace,
+      }
+    }
     if (!Array.isArray(data.replies) || data.replies.length === 0) {
       return {
         replies: fallback,
         source: 'fallback',
+        trace: data.trace,
         warning: data.warning ?? 'Council server returned no piece replies.',
       }
     }
@@ -49,12 +71,20 @@ export async function requestPieceCouncil(
     return {
       replies: data.replies,
       source: data.source === 'gemini' ? 'gemini' : 'fallback',
+      trace: data.trace,
       warning: data.warning,
     }
   } catch {
     return {
       replies: fallback,
       source: 'fallback',
+      trace: [
+        {
+          actor: 'Council server',
+          content: 'Server is unavailable; local legal candidates were used.',
+          status: 'blocked',
+        },
+      ],
       warning: 'Council server is unavailable.',
     }
   }

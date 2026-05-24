@@ -12,6 +12,7 @@
     "dev": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/web",
     "dev:server": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/server",
     "dev:web": "npm run build --workspace @agentic-chess/chess-council && npm run dev --workspace @agentic-chess/web",
-    "preview": "npm run preview --workspace @agentic-chess/web"
+    "preview": "npm run preview --workspace @agentic-chess/web",
+    "start": "npm run start --workspace @agentic-chess/web"
   }
 }
