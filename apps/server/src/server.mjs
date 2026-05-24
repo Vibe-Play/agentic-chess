@@ -217,6 +217,44 @@ function normalizeManagedSelections(rawSelections) {
     .filter((selection) => selection.from || selection.to || selection.san)
 }
 
+function normalizeCommand(value) {
+  return safeText(value, 1_200).toLowerCase()
+}
+
+function normalizeSan(value) {
+  return safeText(value, 16).toLowerCase().replace(/0/g, 'o').replace(/[+#?!\s]/g, '')
+}
+
+function hasAnyText(value, terms) {
+  return terms.some((term) => value.includes(term))
+}
+
+function buildCastleQuestion(game, command) {
+  const normalized = normalizeCommand(command)
+  const asksToCastle = hasAnyText(normalized, ['castle', 'castling', 'o-o', '0-0'])
+  const specifiedSide = hasAnyText(normalized, [
+    'king side',
+    'kingside',
+    'short castle',
+    'queen side',
+    'queenside',
+    'long castle',
+  ])
+
+  if (!asksToCastle || specifiedSide) return null
+
+  const castleMoves = game
+    .moves({ verbose: true })
+    .filter((move) => move.piece === 'k' && normalizeSan(move.san).startsWith('o-o'))
+
+  if (castleMoves.length < 2) return null
+
+  return {
+    options: castleMoves.map((move) => (move.to[0] === 'g' ? `short castle (${move.san})` : `long castle (${move.san})`)),
+    question: 'Both castles are legal. Short castle or long castle?',
+  }
+}
+
 async function askGeminiDirector(game, command, maxReplies) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return null
@@ -231,8 +269,9 @@ async function askGeminiDirector(game, command, maxReplies) {
     'The user is the king. Convert the king command into the strongest legal move shortlist.',
     'Choose only moves from the provided legalMoves roster. Never invent SAN, source squares, or destinations.',
     'Honor direct commands first: if the king asks to castle and a castling move is legal, rank that castling move first.',
+    'Ask one concise question only when the command is impossible, internally conflicting, or needs the king to choose between incompatible plans.',
     'Return at most maxReplies moves and keep unique piece classes when possible.',
-    'Return strict JSON: {"moves":[{"from":"e1","to":"g1","san":"O-O","sender":"Castling","subtitle":"Royal guard","content":"Short castle is ready now.","score":100}],"note":"optional"}',
+    'Return strict JSON: {"moves":[{"from":"e1","to":"g1","san":"O-O","sender":"Castling","subtitle":"Royal guard","content":"Short castle is ready now.","score":100}],"question":"optional","options":["optional"],"note":"optional"}',
   ].join(' ')
 
   try {
@@ -285,6 +324,8 @@ async function askGeminiDirector(game, command, maxReplies) {
 
     return {
       note: safeText(parsed?.note, 240),
+      options: Array.isArray(parsed?.options) ? parsed.options.map((option) => safeText(option, 120)).filter(Boolean) : [],
+      question: safeText(parsed?.question, 220),
       selections: normalizeManagedSelections(rawMoves),
     }
   } finally {
@@ -410,10 +451,33 @@ async function handlePieceCouncil(request, response) {
 
   const replyLimit = normalizeMaxReplies(body.maxReplies)
   let context = buildPieceCouncilContext(game, command, replyLimit)
+  const castleQuestion = !context.terminal ? buildCastleQuestion(game, command) : null
+
+  if (castleQuestion) {
+    sendJson(response, 200, {
+      question: castleQuestion.question,
+      questionOptions: castleQuestion.options,
+      replies: [],
+      source: 'fallback',
+      trace: [...trace, buildTraceEvent('Council question', castleQuestion.question, 'pending')],
+    })
+    return
+  }
 
   if (!context.terminal && process.env.GEMINI_API_KEY) {
     try {
       const director = await askGeminiDirector(game, command, replyLimit)
+      if (director?.question) {
+        sendJson(response, 200, {
+          question: director.question,
+          questionOptions: director.options,
+          replies: [],
+          source: 'gemini',
+          trace: [...trace, buildTraceEvent('Strategy director', director.question, 'pending')],
+        })
+        return
+      }
+
       if (director?.selections?.length) {
         const managedContext = buildManagedPieceCouncilContext(game, command, director.selections, replyLimit)
         if (managedContext.replies.length > 0) {

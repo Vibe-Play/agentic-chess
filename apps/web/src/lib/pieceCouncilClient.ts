@@ -2,6 +2,8 @@ import { type Chess } from 'chess.js'
 import { orchestratePieceCouncil, type PieceReply } from '@agentic-chess/chess-council'
 
 export type PieceCouncilResult = {
+  question?: string
+  questionOptions?: string[]
   replies: PieceReply[]
   source: 'fallback' | 'gemini'
   terminal?: string
@@ -51,6 +53,17 @@ export async function requestPieceCouncil(
     }
 
     const data = (await response.json()) as PieceCouncilResult
+    if (data.question) {
+      return {
+        question: data.question,
+        questionOptions: data.questionOptions,
+        replies: [],
+        source: data.source === 'gemini' ? 'gemini' : 'fallback',
+        trace: data.trace,
+        warning: data.warning,
+      }
+    }
+
     if (data.terminal) {
       return {
         replies: [],

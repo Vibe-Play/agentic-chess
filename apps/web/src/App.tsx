@@ -401,8 +401,10 @@ function LocalGame() {
   const [councilRoomEvents, setCouncilRoomEvents] = useState<CouncilRoomEvent[]>([])
   const [activeStrategy, setActiveStrategy] = useState('')
   const [autopilotEnabled, setAutopilotEnabled] = useState(false)
+  const [pendingCouncilQuestion, setPendingCouncilQuestion] = useState('')
   const activeStrategyRef = useRef('')
   const autopilotEnabledRef = useRef(false)
+  const councilRunIdRef = useRef(0)
   const autopilotRunKeyRef = useRef('')
   const autopilotTimerRef = useRef<number | null>(null)
 
@@ -533,12 +535,16 @@ function LocalGame() {
   const runCouncilTurn = useCallback(
     async (command: string, mode: 'auto' | 'suggest') => {
       const trimmed = command.trim()
-      if (!trimmed || isCouncilThinking || isViewingArchive) return
+      if (!trimmed || isViewingArchive) return
 
       if (isTerminalGame(game)) {
         setAutopilotEnabled(false)
         return
       }
+
+      const runId = councilRunIdRef.current + 1
+      councilRunIdRef.current = runId
+      const isCurrentRun = () => councilRunIdRef.current === runId
 
       if (mode === 'auto') {
         autopilotRunKeyRef.current = `${game.fen()}::${trimmed}`
@@ -549,6 +555,7 @@ function LocalGame() {
       setSelectedThreadId('current')
       setBoardReplies([])
       setPreviewMove(null)
+      setPendingCouncilQuestion('')
       setCouncilRoomEvents(buildCouncilOpeningEvents(game, trimmed, id))
       setMessages((current) => [
         ...current,
@@ -565,6 +572,8 @@ function LocalGame() {
 
       try {
         const result = await requestPieceCouncil(game, trimmed, 3)
+        if (!isCurrentRun()) return
+
         const sourceLabel = result.source === 'gemini' ? 'Gemini counsel' : 'local counsel'
         const traceEvents = traceToCouncilEvents(result.trace, id + 100)
 
@@ -592,6 +601,38 @@ function LocalGame() {
               sender: 'Board',
               subtitle: 'terminal position',
               content: terminalMessage,
+            },
+          ])
+          return
+        }
+
+        const councilQuestion = result.question
+        if (councilQuestion) {
+          setAutopilotEnabled(false)
+          setBoardReplies([])
+          setPreviewMove(null)
+          setPendingCouncilQuestion(councilQuestion)
+          setCouncilRoomEvents((current) => [
+            ...current.filter((event) => event.status !== 'pending'),
+            ...traceEvents,
+            {
+              actor: 'Council question',
+              content: result.questionOptions?.length
+                ? `${councilQuestion} ${result.questionOptions.join(' / ')}`
+                : councilQuestion,
+              id: id + 200,
+              status: 'pending',
+              tone: 'system',
+            },
+          ])
+          setMessages((current) => [
+            ...current,
+            {
+              id: id + 1,
+              role: 'system',
+              sender: 'Council question',
+              subtitle: sourceLabel,
+              content: councilQuestion,
             },
           ])
           return
@@ -668,29 +709,32 @@ function LocalGame() {
 
         if (mode === 'auto') {
           await sleep(900)
-          if (autopilotEnabledRef.current && activeStrategyRef.current === trimmed) {
+          if (isCurrentRun() && autopilotEnabledRef.current && activeStrategyRef.current === trimmed) {
             const committed = commitMove(topReply.move.from, topReply.move.to, topReply.move.promotion ?? 'q')
             if (!committed) setAutopilotEnabled(false)
           }
         }
       } finally {
-        setCouncilThinking(false)
+        if (isCurrentRun()) {
+          setCouncilThinking(false)
+        }
       }
     },
-    [commitMove, game, isCouncilThinking, isViewingArchive],
+    [commitMove, game, isViewingArchive],
   )
 
   const sendMessage = useCallback(async () => {
     const trimmed = draft.trim()
-    if (!trimmed || isCouncilThinking || isViewingArchive) return
+    if (!trimmed || isViewingArchive) return
 
     setDraft('')
     setActiveStrategy(trimmed)
     setAutopilotEnabled(true)
+    setPendingCouncilQuestion('')
     activeStrategyRef.current = trimmed
     autopilotEnabledRef.current = true
     await runCouncilTurn(trimmed, 'auto')
-  }, [draft, isCouncilThinking, isViewingArchive, runCouncilTurn])
+  }, [draft, isViewingArchive, runCouncilTurn])
 
   useEffect(() => {
     if (!autopilotEnabled || !activeStrategy.trim() || isCouncilThinking || isViewingArchive) return
@@ -749,11 +793,13 @@ function LocalGame() {
                 placeholder={
                   isViewingArchive
                     ? 'Viewing archived turn thread'
+                    : pendingCouncilQuestion
+                      ? 'Answer the council...'
                     : activeStrategy
                       ? `Steer: ${activeStrategy}`
                       : 'Give the king strategy...'
                 }
-                disabled={isCouncilThinking || isViewingArchive}
+                disabled={isViewingArchive}
               />
               {autopilotEnabled ? (
                 <button
@@ -777,7 +823,7 @@ function LocalGame() {
                 type="button"
                 onClick={sendMessage}
                 aria-label="Send message"
-                disabled={isCouncilThinking || isViewingArchive}
+                disabled={!draft.trim() || isViewingArchive}
               >
                 <CornerDownLeft size={18} />
               </button>
